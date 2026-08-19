@@ -3,7 +3,7 @@ name: Build Verified Image
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - TAG
 
