@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Weekend Report - Overview{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Automation Control</p>
+    <h1>Weekend Report Automation</h1>
+    <p class="lede">Start a controlled validation run and review recent execution history.</p>
+  </div>
+  <form method="post" action="/runs" data-create-run-form>
+    <button class="button button-primary" type="submit"{% if not preflight.ok %} disabled{% endif %}>RUN WEEKEND REPORT</button>
+  </form>
+</section>
+
+<section class="panel preflight-panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Configuration Preflight</p>
+      <h2>Runtime Readiness</h2>
+    </div>
+    {% if preflight.ok %}
+      {{ ui.status_badge("PASS") }}
+    {% else %}
+      {{ ui.status_badge("ERROR") }}
+    {% endif %}
+  </div>
+  {% if preflight.ok %}
+    <p class="panel-copy">The loaded local configuration passed placeholder and schema checks for safe startup.</p>
+  {% else %}
+    <p class="panel-copy">A real Weekend Report run is blocked until the following configuration items are resolved.</p>
+    <ul class="issue-list">
+      {% for line in preflight.lines() %}
+        <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <p class="inline-status" data-review-status aria-live="polite"></p>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">History</p>
+      <h2>Recent Runs</h2>
+    </div>
+  </div>
+  {% if runs %}
+    <div class="run-list">
+      {% for run in runs %}
+        <a class="run-row" href="/runs/{{ run.run_id }}">
+          <span>
+            <strong>{{ run.run_id }}</strong>
+            <small>Created {{ run.created_at }}</small>
+          </span>
+          <span class="run-row-status">
+            {{ ui.status_badge(run.state) }}
+            {% if run.automation_status %}{{ ui.status_badge(run.automation_status) }}{% endif %}
+          </span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h3>No runs yet</h3>
+      <p>Once a run is created, its operational summary and review workflow will appear here.</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

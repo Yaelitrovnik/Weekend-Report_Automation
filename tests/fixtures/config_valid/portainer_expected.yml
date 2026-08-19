@@ -1,0 +1,151 @@
+{
+  "collection_mode": "fixture",
+  "defaults": {
+    "required": true,
+    "expected": {
+      "service_state": "active",
+      "task_state_policy": {
+        "failed": "FAIL",
+        "rejected": "FAIL",
+        "restarting": "FAIL",
+        "starting": "IGNORE"
+      }
+    }
+  },
+  "services": {
+    "recording-gateway": {
+      "id": "svc1",
+      "name": "recording-gateway",
+      "stack": "recording",
+      "expected": {
+        "desired_replicas": 3,
+        "running_replicas": 3,
+        "healthy_replicas": 3,
+        "image": {
+          "reference": "example/recording-gateway:fixture",
+          "comparison": "full_reference"
+        }
+      }
+    }
+  },
+  "sites": {
+    "site1": {
+      "environment_type": "docker_swarm",
+      "service_inventory": "common",
+      "overrides": {
+        "services": {}
+      }
+    },
+    "site2": {
+      "environment_type": "docker_swarm",
+      "service_inventory": "common",
+      "overrides": {
+        "services": {}
+      }
+    }
+  },
+  "fixture_actual": {
+    "sites": {
+      "site1": {
+        "environment_type": "docker_swarm",
+        "api": {
+          "source": "fixture",
+          "api_contract": "fixture"
+        },
+        "services": [
+          {
+            "site": "site1",
+            "id": "svc1",
+            "name": "recording-gateway",
+            "stack": "recording",
+            "desired_replicas": 3,
+            "running_replicas": 3,
+            "healthy_replicas": 3,
+            "health": {
+              "available": true,
+              "source": "fixture",
+              "definition": "fixture-provided healthy replica count"
+            },
+            "image": "example/recording-gateway:fixture",
+            "service_mode": "replicated",
+            "service_state": "active",
+            "task_states": [
+              {
+                "id": "task1",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              },
+              {
+                "id": "task2",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              },
+              {
+                "id": "task3",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              }
+            ],
+            "failed_tasks": 0,
+            "rejected_tasks": 0,
+            "restarting_tasks": 0,
+            "starting_tasks": 0
+          }
+        ]
+      },
+      "site2": {
+        "environment_type": "docker_swarm",
+        "api": {
+          "source": "fixture",
+          "api_contract": "fixture"
+        },
+        "services": [
+          {
+            "site": "site2",
+            "id": "svc1",
+            "name": "recording-gateway",
+            "stack": "recording",
+            "desired_replicas": 3,
+            "running_replicas": 3,
+            "healthy_replicas": 3,
+            "health": {
+              "available": true,
+              "source": "fixture",
+              "definition": "fixture-provided healthy replica count"
+            },
+            "image": "example/recording-gateway:fixture",
+            "service_mode": "replicated",
+            "service_state": "active",
+            "task_states": [
+              {
+                "id": "task1",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              },
+              {
+                "id": "task2",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              },
+              {
+                "id": "task3",
+                "desired_state": "running",
+                "current_state": "running",
+                "health": "healthy"
+              }
+            ],
+            "failed_tasks": 0,
+            "rejected_tasks": 0,
+            "restarting_tasks": 0,
+            "starting_tasks": 0
+          }
+        ]
+      }
+    }
+  }
+}

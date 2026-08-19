@@ -1,0 +1,33 @@
+{
+  "collection_mode": "fixture",
+  "adapter": "existing_sync_function",
+  "function_reference": "tests.fixtures.database_sync_function",
+  "fixture_actual": {
+    "sites": {
+      "site1": {
+        "target": "fixture-db-site1",
+        "create_success": true,
+        "replication_after_create": true,
+        "delete_success": true,
+        "replication_after_delete": true,
+        "cleanup_complete": true,
+        "errors": [],
+        "evidence": {
+          "algorithm": "temp table create/replicate/delete/replicate fixture"
+        }
+      },
+      "site2": {
+        "target": "fixture-db-site2",
+        "create_success": true,
+        "replication_after_create": true,
+        "delete_success": true,
+        "replication_after_delete": true,
+        "cleanup_complete": true,
+        "errors": [],
+        "evidence": {
+          "algorithm": "temp table create/replicate/delete/replicate fixture"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "collection_mode": "fixture",
+  "workflow": "existing_device_start_stop",
+  "safety": {
+    "create_device_allowed": false,
+    "delete_device_allowed": false,
+    "automatic_replay_after_unknown_state": false
+  },
+  "sites": {
+    "site1": {
+      "mode": "fixture",
+      "device_selection": {
+        "no_eligible_device_status": "ERROR"
+      }
+    },
+    "site2": {
+      "mode": "fixture",
+      "device_selection": {
+        "no_eligible_device_status": "ERROR"
+      }
+    }
+  },
+  "fixture_actual": {
+    "sites": {
+      "site1": {
+        "device_selection": {
+          "success": true,
+          "device": {
+            "id": "fixture-device-site1",
+            "name": "Fixture Device Site 1",
+            "recording": false
+          }
+        },
+        "webapp_baseline": {
+          "success": true,
+          "count": 2
+        },
+        "backend_baseline": {
+          "success": true,
+          "count": 2
+        },
+        "start_action": {
+          "success": true
+        },
+        "device_started": {
+          "success": true,
+          "recording": true
+        },
+        "webapp_increment": {
+          "success": true,
+          "count": 3,
+          "expected_count": 3
+        },
+        "backend_increment": {
+          "success": true,
+          "count": 3,
+          "expected_count": 3
+        },
+        "stop_action": {
+          "success": true
+        },
+        "device_stopped": {
+          "success": true,
+          "recording": false
+        },
+        "webapp_restored": {
+          "success": true,
+          "count": 2,
+          "expected_count": 2
+        },
+        "backend_restored": {
+          "success": true,
+          "count": 2,
+          "expected_count": 2
+        },
+        "cleanup": {
+          "success": true,
+          "complete": true
+        }
+      },
+      "site2": {
+        "device_selection": {
+          "success": true,
+          "device": {
+            "id": "fixture-device-site2",
+            "name": "Fixture Device Site 2",
+            "recording": false
+          }
+        },
+        "webapp_baseline": {
+          "success": true,
+          "count": 2
+        },
+        "backend_baseline": {
+          "success": true,
+          "count": 2
+        },
+        "start_action": {
+          "success": true
+        },
+        "device_started": {
+          "success": true,
+          "recording": true
+        },
+        "webapp_increment": {
+          "success": true,
+          "count": 3,
+          "expected_count": 3
+        },
+        "backend_increment": {
+          "success": true,
+          "count": 3,
+          "expected_count": 3
+        },
+        "stop_action": {
+          "success": true
+        },
+        "device_stopped": {
+          "success": true,
+          "recording": false
+        },
+        "webapp_restored": {
+          "success": true,
+          "count": 2,
+          "expected_count": 2
+        },
+        "backend_restored": {
+          "success": true,
+          "count": 2,
+          "expected_count": 2
+        },
+        "cleanup": {
+          "success": true,
+          "complete": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Weekend Report{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <meta name="weekend-report-csrf-token" content="{{ csrf_token | default('') }}">
+</head>
+<body>
+  {% import "_macros.html" as ui %}
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand-mark">WR</span>
+        <span>
+          <strong>Weekend Report</strong>
+          <small>Operations Dashboard</small>
+        </span>
+      </a>
+      <div class="topbar-meta">
+        {% if run is defined and run %}
+          <span class="run-chip">RUN_ID {{ run.run_id }}</span>
+          {{ ui.status_badge(run.state) }}
+        {% endif %}
+      </div>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <nav class="module-nav">
+          {% if run is defined and run %}
+            {% for item in module_nav %}
+              {% if item.id == "overview" %}
+                <a class="{% if active_page == 'overview' %}active{% endif %}" href="/runs/{{ run.run_id }}">Overview</a>
+              {% elif item.id == "review" %}
+                <a class="{% if active_page == 'review' %}active{% endif %}" href="/runs/{{ run.run_id }}/review">Review</a>
+              {% else %}
+                <a class="{% if active_page == item.id %}active{% endif %}" href="/runs/{{ run.run_id }}/{{ item.id }}">{{ item.label }}</a>
+              {% endif %}
+            {% endfor %}
+            {% if run.final_pdf_path %}
+              <a class="final-pdf-link" href="/api/runs/{{ run.run_id }}/final-pdf">OPEN FINAL PDF</a>
+            {% endif %}
+          {% else %}
+            <a class="active" href="/">Overview</a>
+            <span>Portainer</span>
+            <span>DOCTOR</span>
+            <span>RabbitMQ</span>
+            <span>Recording</span>
+            <span>Infrastructure</span>
+            <span>Database</span>
+            <span>Splunk</span>
+            <span>Review</span>
+          {% endif %}
+        </nav>
+      </aside>
+      <main id="main-content" class="content" tabindex="-1">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

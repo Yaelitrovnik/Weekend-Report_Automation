@@ -1,0 +1,88 @@
+{% macro status_badge(status) -%}
+  {% set value = (status|string) if status else "SKIPPED" %}
+  <span class="status-badge status-{{ value|lower|replace('_', '-') }}">
+    <span class="status-mark" aria-hidden="true"></span>
+    <span>{{ value }}</span>
+  </span>
+{%- endmacro %}
+
+{% macro action_link(href, label, variant="secondary", target_blank=false) -%}
+  <a class="button button-{{ variant }}" href="{{ href }}"{% if target_blank %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ label }}</a>
+{%- endmacro %}
+
+{% macro evidence_links(items) -%}
+  {% if items %}
+    <div class="evidence-actions" aria-label="Evidence">
+      {% for item in items %}
+        <a class="evidence-link" href="/api/evidence/{{ item.path }}" target="_blank" rel="noopener noreferrer">
+          <span>Open {{ item.evidence_type }}</span>
+          <small>{{ item.checksum }}</small>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <span class="muted">No evidence attached</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro result_card(result, run_id, show_note=true) -%}
+  <article class="result-card status-left status-left-{{ result.status|lower|replace('_', '-') }}">
+    <div class="result-card-main">
+      <div>
+        <p class="eyebrow">{{ result.module_label }}{% if result.site %} / {{ result.site_label }}{% endif %}</p>
+        <h3>{{ result.check_label }}</h3>
+        {% if result.target %}<p class="target-line">{{ result.target }}</p>{% endif %}
+      </div>
+      {{ status_badge(result.status) }}
+    </div>
+    <dl class="finding-grid">
+      <div>
+        <dt>Expected</dt>
+        <dd>{{ result.expected_summary }}</dd>
+      </div>
+      <div>
+        <dt>Actual</dt>
+        <dd>{{ result.actual_summary }}</dd>
+      </div>
+      <div class="finding-message">
+        <dt>Message</dt>
+        <dd>{{ result.message }}</dd>
+      </div>
+    </dl>
+    <div class="result-actions">
+      {{ evidence_links(result.evidence) }}
+      <details class="technical-details">
+        <summary>Technical details</summary>
+        <div class="technical-grid">
+          <div>
+            <h4>Expected</h4>
+            <pre>{{ result.expected_pretty or "Not captured" }}</pre>
+          </div>
+          <div>
+            <h4>Actual</h4>
+            <pre>{{ result.actual_pretty or "Not captured" }}</pre>
+          </div>
+          {% if result.metadata_pretty %}
+          <div>
+            <h4>Metadata</h4>
+            <pre>{{ result.metadata_pretty }}</pre>
+          </div>
+          {% endif %}
+        </div>
+      </details>
+    </div>
+    {% if show_note and result.id %}
+      <label class="note-field result-note">
+        <span>Reviewer note for this check</span>
+        <textarea data-note-endpoint="/api/runs/{{ run_id }}/notes/result/{{ result.id }}">{{ result.note }}</textarea>
+      </label>
+    {% endif %}
+  </article>
+{%- endmacro %}
+
+{% macro summary_count(item) -%}
+  <div class="metric-tile">
+    {{ status_badge(item.status) }}
+    <strong>{{ item.count }}</strong>
+  </div>
+{%- endmacro %}

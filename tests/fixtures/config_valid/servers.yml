@@ -1,0 +1,135 @@
+{
+  "ssh": {
+    "username": "fixture",
+    "auth": "fixture",
+    "host_key_policy": "fixture",
+    "connect_timeout": 5,
+    "command_timeout": 5
+  },
+  "sites": {
+    "site1": {
+      "servers": [
+        {
+          "id": "srv1",
+          "hostname": "fixture1",
+          "required": true,
+          "ssh_port": 22,
+          "filesystems": [
+            {
+              "filesystem": "/dev/sda1",
+              "mountpoint": "/",
+              "warning_percent": 80,
+              "critical_percent": 90,
+              "required": true
+            }
+          ],
+          "nfs_mounts": [
+            {
+              "source": "nfs-fixture:/exports/recordings",
+              "mountpoint": "/mnt/recordings",
+              "warning_percent": 70,
+              "critical_percent": 85,
+              "required": true
+            }
+          ],
+          "chrony": [
+            {
+              "timezone": "UTC",
+              "source": "fixture-ntp",
+              "warning_offset": 0.5,
+              "critical_offset": 1.0,
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    "site2": {
+      "servers": [
+        {
+          "id": "srv2",
+          "hostname": "fixture2",
+          "required": true,
+          "ssh_port": 22,
+          "filesystems": [
+            {
+              "filesystem": "/dev/sda1",
+              "mountpoint": "/",
+              "warning_percent": 80,
+              "critical_percent": 90,
+              "required": true
+            }
+          ],
+          "nfs_mounts": [
+            {
+              "source": "nfs-fixture:/exports/recordings",
+              "mountpoint": "/mnt/recordings",
+              "warning_percent": 70,
+              "critical_percent": 85,
+              "required": true
+            }
+          ],
+          "chrony": [
+            {
+              "timezone": "UTC",
+              "source": "fixture-ntp",
+              "warning_offset": 0.5,
+              "critical_offset": 1.0,
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "fixture_actual": {
+    "sites": {
+      "site1": {
+        "servers": {
+          "srv1": {
+            "reachable": true,
+            "df": "Filesystem Size Used Avail Use% Mounted on\\n/dev/sda1 100G 20G 80G 20% /",
+            "nfs_mounts": [
+              {
+                "source": "nfs-fixture:/exports/recordings",
+                "mountpoint": "/mnt/recordings",
+                "destination": "/mnt/recordings",
+                "reachable": true,
+                "usable": true,
+                "utilization_percent": 30
+              }
+            ],
+            "chrony": {
+              "synchronized": true,
+              "source": "fixture-ntp",
+              "offset": 0.1
+            }
+          }
+        }
+      },
+      "site2": {
+        "servers": {
+          "srv2": {
+            "reachable": true,
+            "df": "Filesystem Size Used Avail Use% Mounted on\\n/dev/sda1 100G 20G 80G 20% /",
+            "nfs_mounts": [
+              {
+                "source": "nfs-fixture:/exports/recordings",
+                "mountpoint": "/mnt/recordings",
+                "destination": "/mnt/recordings",
+                "reachable": true,
+                "usable": true,
+                "utilization_percent": 30
+              }
+            ],
+            "chrony": {
+              "synchronized": true,
+              "source": "fixture-ntp",
+              "offset": 0.1
+            }
+          }
+        }
+      }
+    }
+  }
+}

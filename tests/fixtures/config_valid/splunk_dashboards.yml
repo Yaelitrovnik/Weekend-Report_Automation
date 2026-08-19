@@ -1,0 +1,39 @@
+{
+  "dashboards": [
+    {
+      "id": "system_health",
+      "display_name": "System Health",
+      "url": "https://example.invalid/splunk/system-health",
+      "required_review": true,
+      "note_required": false,
+      "order": 1
+    },
+    {
+      "id": "recording",
+      "display_name": "Recording",
+      "url": "https://example.invalid/splunk/recording",
+      "required_review": true,
+      "note_required": false,
+      "order": 2
+    },
+    {
+      "id": "infrastructure",
+      "display_name": "Infrastructure",
+      "url": "https://example.invalid/splunk/infrastructure",
+      "required_review": true,
+      "note_required": false,
+      "order": 3
+    },
+    {
+      "id": "errors",
+      "display_name": "Errors",
+      "url": "https://example.invalid/splunk/errors",
+      "required_review": true,
+      "note_required": false,
+      "order": 4
+    }
+  ],
+  "open_all": {
+    "include_optional": true
+  }
+}

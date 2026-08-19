@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Weekend Report - Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Human Review</p>
+    <h1>Final Review</h1>
+    <p class="lede">Review automated findings, add notes, and make the final decision for {{ run.run_id }}.</p>
+  </div>
+  <div class="heading-actions">
+    <button class="button button-primary" type="button" data-action="save-notes">SAVE NOTES</button>
+    <button class="button button-secondary" type="button" data-action="reload-notes">Reload Persisted Notes</button>
+    {% if run.final_pdf_path %}
+      <a class="button button-primary" href="/api/runs/{{ run.run_id }}/final-pdf">OPEN FINAL PDF</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel review-summary">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Summary</p>
+      <h2>Automated Status</h2>
+    </div>
+    {{ ui.status_badge(overall_status) }}
+  </div>
+  <div class="metric-grid">
+    {% for item in status_counts %}
+      {{ ui.summary_count(item) }}
+    {% endfor %}
+  </div>
+  <div class="split-grid embedded">
+    <div>
+      <h3>Site Summaries</h3>
+      <div class="summary-list">
+        {% for site in site_summaries %}
+          <div class="summary-row">
+            <span><strong>{{ site.label }}</strong><small>{{ site.result_count }} checks</small></span>
+            {{ ui.status_badge(site.status) }}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <h3>Module Summaries</h3>
+      <div class="summary-list">
+        {% for module_item in module_summaries %}
+          <a class="summary-row" href="/runs/{{ run.run_id }}/{{ module_item.href_module }}">
+            <span><strong>{{ module_item.label }}</strong><small>{{ module_item.result_count }} checks</small></span>
+            {{ ui.status_badge(module_item.status) }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Needs Review</p>
+      <h2>Findings Requiring Attention</h2>
+    </div>
+    <span class="count-pill">{{ attention_results|length }} findings</span>
+  </div>
+  {% if attention_results %}
+    <div class="result-stack">
+      {% for result in attention_results %}
+        {{ ui.result_card(result, run.run_id, true) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h3>No attention findings</h3>
+      <p>No WARNING, FAIL, ERROR, or MANUAL_REVIEW results are currently recorded for this run.</p>
+    </div>
+  {% endif %}
+</section>
+
+<section class="section-stack">
+  <details class="panel collapsible-panel" open>
+    <summary>
+      <span>
+        <span class="eyebrow">Module Notes</span>
+        <strong>Module Review Panels</strong>
+      </span>
+    </summary>
+    <div class="module-note-grid">
+      {% for panel in module_panels %}
+        <article class="note-card">
+          <div class="note-card-head">
+            <div>
+              <p class="eyebrow">{{ panel.result_count }} checks</p>
+              <h3>{{ panel.label }}</h3>
+            </div>
+            {{ ui.status_badge(panel.status) }}
+          </div>
+          <a class="button button-secondary" href="/runs/{{ run.run_id }}/{{ panel.module }}">Open HTML</a>
+          <label class="note-field">
+            <span>Module note</span>
+            <textarea
+              data-note-endpoint="/api/runs/{{ run.run_id }}/notes/module/{{ panel.module }}"
+              name="note-{{ panel.module }}">{{ panel.note }}</textarea>
+          </label>
+          {% if evidence_by_module.get(panel.module) %}
+            {{ ui.evidence_links(evidence_by_module.get(panel.module, [])) }}
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </details>
+
+  <details class="panel collapsible-panel" open>
+    <summary>
+      <span>
+        <span class="eyebrow">Splunk Notes</span>
+        <strong>Dashboard Review</strong>
+      </span>
+    </summary>
+    <div class="action-bar">
+      <button class="button button-primary" type="button" data-action="open-dashboards">OPEN ALL DASHBOARDS</button>
+    </div>
+    <div class="dashboard-grid">
+      {% for dashboard in dashboard_cards %}
+        <article class="dashboard-card compact-card">
+          <div class="dashboard-card-head">
+            <div>
+              <p class="eyebrow">{{ dashboard.required_label }}</p>
+              <h3>{{ dashboard.display_name }}</h3>
+            </div>
+            <a class="button button-secondary" data-dashboard-url href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer">Open Dashboard</a>
+          </div>
+          <label class="note-field">
+            <span>Dashboard note</span>
+            <textarea
+              data-note-endpoint="/api/runs/{{ run.run_id }}/notes/splunk/{{ dashboard.id }}"
+              name="splunk-{{ dashboard.id }}">{{ dashboard.note }}</textarea>
+          </label>
+        </article>
+      {% endfor %}
+    </div>
+  </details>
+
+  {% if general_notes_enabled %}
+  <details class="panel collapsible-panel" open>
+    <summary>
+      <span>
+        <span class="eyebrow">General Notes</span>
+        <strong>Run-Level Reviewer Notes</strong>
+      </span>
+    </summary>
+    <label class="note-field">
+      <span>General note</span>
+      <textarea
+        data-note-endpoint="/api/runs/{{ run.run_id }}/notes/general"
+        name="general-note">{{ notes_by_key.get("general", "") }}</textarea>
+    </label>
+  </details>
+  {% endif %}
+
+  <details class="panel collapsible-panel">
+    <summary>
+      <span>
+        <span class="eyebrow">Result Notes</span>
+        <strong>All Check Notes</strong>
+      </span>
+    </summary>
+    <div class="result-stack">
+      {% for result in all_presented_results %}
+        {{ ui.result_card(result, run.run_id, true) }}
+      {% endfor %}
+    </div>
+  </details>
+</section>
+
+<section class="panel final-confirmation" id="final-confirmation">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Final Decision</p>
+      <h2>Final Confirmation</h2>
+    </div>
+    {% if run.review_decision %}
+      {{ ui.status_badge(run.review_decision) }}
+    {% endif %}
+  </div>
+  <div class="immutability-note">
+    <strong>Automated findings are immutable.</strong>
+    <span>Reviewer notes do not convert FAIL/WARNING/ERROR to PASS.</span>
+  </div>
+  {% if run.review_decision %}
+    <p class="panel-copy">Decision recorded as {{ run.review_decision }} by {{ run.reviewed_by or "reviewer" }} at {{ run.reviewed_at or "time not recorded" }}.</p>
+  {% endif %}
+  <div class="decision-grid" role="radiogroup" aria-label="Final review decision">
+    <label class="decision-card approve-card">
+      <input type="radio" name="review-decision" value="APPROVE">
+      <span>
+        <strong>APPROVE</strong>
+        <small>Accept the run with the automated findings and saved notes.</small>
+      </span>
+    </label>
+    <label class="decision-card reject-card">
+      <input type="radio" name="review-decision" value="REJECT">
+      <span>
+        <strong>REJECT</strong>
+        <small>Reject the run and preserve the findings, notes, and decision.</small>
+      </span>
+    </label>
+  </div>
+  <div class="confirmation-callout" data-finalize-confirmation hidden>
+    Confirm once more to freeze the review snapshot and generate the single final PDF.
+  </div>
+  <div class="action-bar">
+    <button class="button button-primary" type="button" data-action="finalize" data-run-id="{{ run.run_id }}">Final Confirmation</button>
+    <span data-final-pdf-slot>
+      {% if run.final_pdf_path %}
+        <a class="button button-secondary" href="/api/runs/{{ run.run_id }}/final-pdf">OPEN FINAL PDF</a>
+      {% endif %}
+    </span>
+  </div>
+  <p class="inline-status" data-review-status aria-live="polite"></p>
+</section>
+{% endblock %}

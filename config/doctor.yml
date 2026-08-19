@@ -1,0 +1,15 @@
+{
+  "doctor": {
+    "mode": "<TBD>",
+    "api": {
+      "site1_url": "<TBD>",
+      "site2_url": "<TBD>",
+      "schema": "<TBD>"
+    },
+    "manual_review": {
+      "url": "<TBD>",
+      "instructions": "<TBD>",
+      "note_required": "<TBD>"
+    }
+  }
+}

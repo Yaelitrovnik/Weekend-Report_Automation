@@ -1,0 +1,10 @@
+services:
+  web:
+    environment:
+      WEEKEND_REPORT_CONFIG_DIR: /app/config
+      WEEKEND_REPORT_EVIDENCE_ROOT: /app/runs
+    restart: unless-stopped
+  worker:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped

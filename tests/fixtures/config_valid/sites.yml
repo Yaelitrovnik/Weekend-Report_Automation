@@ -1,0 +1,14 @@
+{
+  "sites": [
+    {
+      "id": "site1",
+      "display_name": "Fixture Site 1",
+      "purpose": "local fixture"
+    },
+    {
+      "id": "site2",
+      "display_name": "Fixture Site 2",
+      "purpose": "local fixture"
+    }
+  ]
+}

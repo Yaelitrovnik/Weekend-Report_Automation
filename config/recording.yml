@@ -1,0 +1,67 @@
+{
+  "collection_mode": "live",
+  "workflow": "existing_device_start_stop",
+  "safety": {
+    "create_device_allowed": false,
+    "delete_device_allowed": false,
+    "state_changing_calls_require_explicit_approval": true,
+    "crash_after_start_requires_recovery": true,
+    "automatic_replay_after_unknown_state": false
+  },
+  "sites": {
+    "site1": {
+      "webapp": {
+        "url_env": "RECORDING_SITE1_WEBAPP_URL",
+        "auth_reference": "<TBD>",
+        "recording_count_query": "<TBD>",
+        "device_recording_status_query": "<TBD>"
+      },
+      "backend": {
+        "url_env": "RECORDING_SITE1_BACKEND_URL",
+        "auth_reference": "<TBD>",
+        "recording_count_query": "<TBD>"
+      },
+      "device_selection": {
+        "source": "existing_devices",
+        "filter": "first suitable existing non-recording device",
+        "no_eligible_device_status": "<TO_VERIFY>"
+      },
+      "actions": {
+        "start_recording": "<TBD>",
+        "stop_recording": "<TBD>"
+      },
+      "polling": {
+        "timeout_seconds": "<TBD>",
+        "interval_seconds": "<TBD>"
+      },
+      "cleanup_verification": "<TBD>"
+    },
+    "site2": {
+      "webapp": {
+        "url_env": "RECORDING_SITE2_WEBAPP_URL",
+        "auth_reference": "<TBD>",
+        "recording_count_query": "<TBD>",
+        "device_recording_status_query": "<TBD>"
+      },
+      "backend": {
+        "url_env": "RECORDING_SITE2_BACKEND_URL",
+        "auth_reference": "<TBD>",
+        "recording_count_query": "<TBD>"
+      },
+      "device_selection": {
+        "source": "existing_devices",
+        "filter": "first suitable existing non-recording device",
+        "no_eligible_device_status": "<TO_VERIFY>"
+      },
+      "actions": {
+        "start_recording": "<TBD>",
+        "stop_recording": "<TBD>"
+      },
+      "polling": {
+        "timeout_seconds": "<TBD>",
+        "interval_seconds": "<TBD>"
+      },
+      "cleanup_verification": "<TBD>"
+    }
+  }
+}

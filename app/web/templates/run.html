@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Weekend Report - {{ run.run_id }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Run Overview</p>
+    <h1>{{ run.run_id }}</h1>
+    <p class="lede">Summary first; detailed checks remain available below and on each module page.</p>
+  </div>
+  <div class="heading-actions">
+    <a class="button button-secondary" href="/runs/{{ run.run_id }}/review">Open Review</a>
+    {% if run.final_pdf_path %}
+      <a class="button button-primary" href="/api/runs/{{ run.run_id }}/final-pdf">OPEN FINAL PDF</a>
+    {% endif %}
+  </div>
+</section>
+
+{% if (run.state|string) == "RECOVERY_REQUIRED" %}
+<section class="panel recovery-panel status-left status-left-error">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Recovery Required</p>
+      <h2>Operator Recovery</h2>
+    </div>
+    {{ ui.status_badge(run.state) }}
+  </div>
+  <div class="recovery-grid">
+    <div>
+      <dl class="metadata-list">
+        <div><dt>Affected module</dt><dd>{{ run.current_module or "RECOVERY_REQUIRED" }}</dd></div>
+        <div><dt>Worker</dt><dd>{{ run.worker_id or "Not recorded" }}</dd></div>
+        <div><dt>Last heartbeat</dt><dd>{{ run.last_heartbeat or "Not recorded" }}</dd></div>
+      </dl>
+      <p class="panel-copy">{{ recovery.get("operator_instructions", "Verify cleanup manually before resolving recovery. Do not replay Recording start/stop operations automatically.") }}</p>
+    </div>
+    <div>
+      <h3>Evidence</h3>
+      {{ ui.evidence_links(evidence) }}
+    </div>
+  </div>
+  <label class="note-field">
+    <span>Recovery-resolution note</span>
+    <textarea data-recovery-note placeholder="Describe verified cleanup before resolving recovery."></textarea>
+  </label>
+  <div class="action-bar">
+    <button class="button button-primary" type="button" data-action="resolve-recovery" data-run-id="{{ run.run_id }}">Resolve Recovery</button>
+    <p class="inline-status" data-review-status aria-live="polite"></p>
+  </div>
+</section>
+{% endif %}
+
+<section class="summary-grid">
+  <article class="summary-card">
+    <p class="eyebrow">Run State</p>
+    {{ ui.status_badge(run.state) }}
+    <dl class="metadata-list compact">
+      <div><dt>Automation</dt><dd>{{ ui.status_badge(overall_status) }}</dd></div>
+      {% if (run.state|string) == "RUNNING" %}
+        <div><dt>Current module</dt><dd>{{ module_label(run.current_module) if run.current_module else "Starting" }}</dd></div>
+      {% endif %}
+      <div><dt>Started by</dt><dd>{{ run.started_by }}</dd></div>
+    </dl>
+  </article>
+  <article class="summary-card">
+    <p class="eyebrow">Review Decision</p>
+    {% if run.review_decision %}
+      {{ ui.status_badge(run.review_decision) }}
+      <p>{{ run.reviewed_by or "Reviewer" }} at {{ run.reviewed_at or "time not recorded" }}</p>
+    {% else %}
+      <span class="quiet-badge">Pending human review</span>
+    {% endif %}
+  </article>
+  <article class="summary-card wide">
+    <p class="eyebrow">Timestamps</p>
+    <dl class="metadata-list compact">
+      <div><dt>Created</dt><dd>{{ run.created_at }}</dd></div>
+      <div><dt>Started</dt><dd>{{ run.started_at or "Not started" }}</dd></div>
+      <div><dt>Finished</dt><dd>{{ run.finished_at or "Not finished" }}</dd></div>
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Finding Counts</p>
+      <h2>Status Summary</h2>
+    </div>
+  </div>
+  <div class="metric-grid">
+    {% for item in status_counts %}
+      {{ ui.summary_count(item) }}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <p class="eyebrow">Sites</p>
+        <h2>Site Summary</h2>
+      </div>
+    </div>
+    <div class="summary-list">
+      {% for site in site_summaries %}
+        <div class="summary-row">
+          <span><strong>{{ site.label }}</strong><small>{{ site.result_count }} checks</small></span>
+          {{ ui.status_badge(site.status) }}
+        </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <p class="eyebrow">Modules</p>
+        <h2>Module Summary</h2>
+      </div>
+    </div>
+    <div class="summary-list">
+      {% for module_item in module_summaries %}
+        <a class="summary-row" href="/runs/{{ run.run_id }}/{{ module_item.href_module }}">
+          <span><strong>{{ module_item.label }}</strong><small>{{ module_item.result_count }} checks</small></span>
+          {{ ui.status_badge(module_item.status) }}
+        </a>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Needs Attention</p>
+      <h2>Important Findings</h2>
+    </div>
+    <span class="count-pill">{{ attention_results|length }} findings</span>
+  </div>
+  {% if attention_results %}
+    <div class="result-stack compact-results">
+      {% for result in attention_results %}
+        {{ ui.result_card(result, run.run_id, false) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h3>No attention findings</h3>
+      <p>No WARNING, FAIL, ERROR, or MANUAL_REVIEW results are currently recorded for this run.</p>
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Detailed Results</p>
+      <h2>All Checks</h2>
+    </div>
+  </div>
+  <details class="collapsible">
+    <summary>Show detailed check results</summary>
+    <div class="result-stack">
+      {% for result in page_results %}
+        {{ ui.result_card(result, run.run_id, false) }}
+      {% endfor %}
+    </div>
+  </details>
+</section>
+
+<section class="panel metadata-panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Run Metadata</p>
+      <h2>Code and Configuration</h2>
+    </div>
+  </div>
+  <dl class="metadata-list">
+    <div><dt>Application version</dt><dd>{{ run.application_version or "Not recorded" }}</dd></div>
+    <div><dt>Build ID</dt><dd>{{ run.build_id or "Not recorded" }}</dd></div>
+    <div><dt>Configuration hash</dt><dd>{{ run.config_version or "Not recorded" }}</dd></div>
+    <div><dt>Git commit</dt><dd>{{ run.git_commit or "Not recorded" }}</dd></div>
+  </dl>
+</section>
+{% endblock %}

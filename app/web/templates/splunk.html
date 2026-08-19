@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Weekend Report - Splunk{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Human Dashboard Review</p>
+    <h1>Splunk Dashboards</h1>
+    <p class="lede">Open each approved dashboard and preserve reviewer notes for the frozen report.</p>
+  </div>
+  <div class="heading-actions">
+    <button class="button button-primary" type="button" data-action="open-dashboards">OPEN ALL DASHBOARDS</button>
+    <button class="button button-secondary" type="button" data-action="save-notes">SAVE NOTES</button>
+    <button class="button button-secondary" type="button" data-action="reload-notes">Reload Persisted Notes</button>
+  </div>
+</section>
+
+<p class="inline-status" data-review-status aria-live="polite"></p>
+
+<section class="dashboard-grid">
+  {% for dashboard in dashboard_cards %}
+    <article class="dashboard-card">
+      <div class="dashboard-card-head">
+        <div>
+          <p class="eyebrow">{{ dashboard.required_label }}</p>
+          <h2>{{ dashboard.display_name }}</h2>
+        </div>
+        <a class="button button-secondary" data-dashboard-url href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer">Open Dashboard</a>
+      </div>
+      <label class="note-field">
+        <span>Reviewer note</span>
+        <textarea
+          data-note-endpoint="/api/runs/{{ run.run_id }}/notes/splunk/{{ dashboard.id }}"
+          name="splunk-{{ dashboard.id }}">{{ dashboard.note }}</textarea>
+      </label>
+    </article>
+  {% else %}
+    <div class="empty-state">
+      <h3>No dashboards configured</h3>
+      <p>Splunk dashboard definitions are still awaiting approved configuration.</p>
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

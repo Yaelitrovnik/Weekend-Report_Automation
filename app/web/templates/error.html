@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Weekend Report - Error{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Request Error</p>
+    <h1>Something needs attention</h1>
+    <p class="lede">The application could not complete this request.</p>
+  </div>
+  <a class="button button-secondary" href="/">Back to Overview</a>
+</section>
+<section class="panel status-left status-left-error">
+  <h2>Error Details</h2>
+  <p>{{ error }}</p>
+</section>
+{% endblock %}

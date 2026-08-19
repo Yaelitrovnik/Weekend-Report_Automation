@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: weekend_report_ci
+      POSTGRES_USER: weekend_report
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CI PostgreSQL password is required}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weekend_report -d weekend_report_ci"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [backend]
+
+  web:
+    image: ${WEEKEND_REPORT_CI_IMAGE:?Exact CI image tag is required}
+    command: ["uvicorn", "app.web.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment: &ci_app_environment
+      WEEKEND_REPORT_APP_VERSION: ${WEEKEND_REPORT_APP_VERSION:-ci-image}
+      WEEKEND_REPORT_BUILD_ID: ${WEEKEND_REPORT_BUILD_ID:-ci-image-smoke}
+      WEEKEND_REPORT_CONFIG_DIR: /app/tests/fixtures/config_valid
+      WEEKEND_REPORT_EVIDENCE_ROOT: /app/runs
+      WEEKEND_REPORT_DATABASE_URL: postgresql://weekend_report:${POSTGRES_PASSWORD}@postgres:5432/weekend_report_ci
+      WEEKEND_REPORT_AUTH_MODE: development
+      WEEKEND_REPORT_WORKER_POLL_SECONDS: "0.5"
+    ports:
+      - "127.0.0.1:${WEEKEND_REPORT_CI_PORT:-18080}:8080"
+    volumes:
+      - evidence:/app/runs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [frontend, backend]
+
+  worker:
+    image: ${WEEKEND_REPORT_CI_IMAGE:?Exact CI image tag is required}
+    command: ["python", "-m", "app.worker.main"]
+    environment: *ci_app_environment
+    volumes:
+      - evidence:/app/runs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks: [backend]
+
+volumes:
+  db-data:
+  evidence:
+
+networks:
+  frontend:
+  backend:
+    internal: true

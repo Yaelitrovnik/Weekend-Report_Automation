@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Weekend Report - {{ module_label(module) }}{% endblock %}
+{% block content %}
+{% set module_state = namespace(status="SKIPPED", count=0) %}
+{% for item in module_summaries %}
+  {% if item.module == module %}
+    {% set module_state.status = item.status %}
+    {% set module_state.count = item.result_count %}
+  {% endif %}
+{% endfor %}
+
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Module Review</p>
+    <h1>{{ module_label(module) }}</h1>
+    <p class="lede">{{ module_state.count }} recorded checks for {{ run.run_id }}.</p>
+  </div>
+  <div class="heading-actions">
+    {{ ui.status_badge(module_state.status) }}
+    <a class="button button-secondary" href="/runs/{{ run.run_id }}/review">Back to Review</a>
+  </div>
+</section>
+
+<section class="panel reviewer-note-panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Reviewer Notes</p>
+      <h2>{{ module_label(module) }} Module Note</h2>
+    </div>
+    <div class="action-bar">
+      <button class="button button-primary" type="button" data-action="save-notes">SAVE NOTES</button>
+      <button class="button button-secondary" type="button" data-action="reload-notes">Reload Persisted Notes</button>
+    </div>
+  </div>
+  <label class="note-field">
+    <span>Module note</span>
+    <textarea
+      data-note-endpoint="/api/runs/{{ run.run_id }}/notes/module/{{ module }}"
+      data-note-scope="module"
+      data-module="{{ module }}">{{ notes_by_key.get("module:" ~ module, "") }}</textarea>
+  </label>
+  <p class="inline-status" data-review-status aria-live="polite"></p>
+</section>
+
+{% if module == "portainer" and portainer_services %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Two-Site Comparison</p>
+      <h2>Portainer Services</h2>
+    </div>
+  </div>
+  <div class="service-stack">
+    {% for service in portainer_services %}
+      <article class="service-comparison status-left status-left-{{ service.status|lower|replace('_', '-') }}">
+        <div class="service-header">
+          <div>
+            <p class="eyebrow">Service</p>
+            <h3>{{ service.service }}</h3>
+          </div>
+          <div class="service-badges">
+            {{ ui.status_badge(service.status) }}
+            <span class="parity-pill">Parity {{ ui.status_badge(service.parity_status) }}</span>
+          </div>
+        </div>
+        <div class="comparison-grid">
+          {% for site in service.site_rows %}
+            <div class="comparison-site">
+              <div class="comparison-site-heading">
+                <strong>{{ site.label }}</strong>
+                {{ ui.status_badge(site.status) }}
+              </div>
+              <dl class="service-metrics">
+                <div><dt>Desired</dt><dd>{{ site.desired }}</dd></div>
+                <div><dt>Running</dt><dd>{{ site.running }}</dd></div>
+                <div><dt>Healthy</dt><dd>{{ site.healthy }}</dd></div>
+                <div><dt>State</dt><dd>{{ site.service_state }}</dd></div>
+                <div class="wide-metric"><dt>Image</dt><dd>{{ site.image }}</dd></div>
+              </dl>
+            </div>
+          {% endfor %}
+        </div>
+        <details class="collapsible">
+          <summary>Detailed service checks</summary>
+          <div class="result-stack">
+            {% for site in service.site_rows %}
+              {% for result in site.checks %}
+                {{ ui.result_card(result, run.run_id, true) }}
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </details>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+{% elif module == "rabbitmq" and rabbitmq_sections %}
+<section class="section-stack">
+  {% for section in rabbitmq_sections %}
+    <article class="panel status-left status-left-{{ section.status|lower|replace('_', '-') }}">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">RabbitMQ</p>
+          <h2>{{ section.title }}</h2>
+        </div>
+        {{ ui.status_badge(section.status) }}
+      </div>
+      {% if section.problems %}
+        <div class="problem-strip">
+          {% for result in section.problems %}
+            <div>
+              {{ ui.status_badge(result.status) }}
+              <span>{{ result.target or result.check_label }}: {{ result.message }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="panel-copy">No problems recorded in this section.</p>
+      {% endif %}
+      <details class="collapsible">
+        <summary>Show all {{ section.title|lower }} checks</summary>
+        <div class="result-stack">
+          {% for result in section.results %}
+            {{ ui.result_card(result, run.run_id, true) }}
+          {% endfor %}
+        </div>
+      </details>
+    </article>
+  {% endfor %}
+</section>
+
+{% elif module == "recording" and recording_workflows %}
+<section class="section-stack">
+  {% for workflow in recording_workflows %}
+    <article class="panel status-left status-left-{{ workflow.status|lower|replace('_', '-') }}">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Existing-Device Workflow</p>
+          <h2>{{ workflow.label }}</h2>
+        </div>
+        {{ ui.status_badge(workflow.status) }}
+      </div>
+      <div class="workflow-steps">
+        {% for step in workflow.steps %}
+          <div class="workflow-step status-left status-left-{{ step.status|lower|replace('_', '-') }}">
+            <div class="workflow-step-head">
+              <strong>{{ step.label }}</strong>
+              {{ ui.status_badge(step.status) }}
+            </div>
+            {% if step.results %}
+              <p>{{ step.results[0].message }}</p>
+              {{ ui.evidence_links(step.results[0].evidence) }}
+              <details class="technical-details">
+                <summary>Step details</summary>
+                <div class="result-stack">
+                  {% for result in step.results %}
+                    {{ ui.result_card(result, run.run_id, true) }}
+                  {% endfor %}
+                </div>
+              </details>
+            {% else %}
+              <p class="muted">No result recorded for this step.</p>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      {% if workflow.remaining %}
+        <details class="collapsible">
+          <summary>Additional Recording checks</summary>
+          <div class="result-stack">
+            {% for result in workflow.remaining %}
+              {{ ui.result_card(result, run.run_id, true) }}
+            {% endfor %}
+          </div>
+        </details>
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>
+
+{% elif module == "infrastructure" and infrastructure_servers %}
+<section class="section-stack">
+  {% for server in infrastructure_servers %}
+    <article class="panel status-left status-left-{{ server.status|lower|replace('_', '-') }}">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Server</p>
+          <h2>{{ server.server }}</h2>
+        </div>
+        {{ ui.status_badge(server.status) }}
+      </div>
+      <div class="infra-grid">
+        {% for section in server.sections %}
+          <details class="infra-section" {% if section.status != "PASS" and section.status != "SKIPPED" %}open{% endif %}>
+            <summary>
+              <span>{{ section.title }}</span>
+              {{ ui.status_badge(section.status) }}
+            </summary>
+            <div class="result-stack">
+              {% for result in section.results %}
+                {{ ui.result_card(result, run.run_id, true) }}
+              {% endfor %}
+            </div>
+          </details>
+        {% endfor %}
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+{% else %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Checks</p>
+      <h2>Results</h2>
+    </div>
+  </div>
+  {% if page_results %}
+    <div class="result-stack">
+      {% for result in page_results %}
+        {{ ui.result_card(result, run.run_id, true) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h3>No module results</h3>
+      <p>This module has not produced check results for the current run.</p>
+    </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if evidence_by_module.get(module) %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Evidence</p>
+      <h2>Module Evidence</h2>
+    </div>
+  </div>
+  {{ ui.evidence_links(evidence_by_module.get(module, [])) }}
+</section>
+{% endif %}
+{% endblock %}

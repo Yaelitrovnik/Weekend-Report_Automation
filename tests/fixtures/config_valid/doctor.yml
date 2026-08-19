@@ -1,0 +1,10 @@
+{
+  "doctor": {
+    "mode": "manual",
+    "manual_review": {
+      "url": "https://example.invalid/doctor",
+      "instructions": "Fixture manual review only",
+      "note_required": false
+    }
+  }
+}

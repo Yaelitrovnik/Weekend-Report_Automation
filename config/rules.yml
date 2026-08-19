@@ -1,0 +1,103 @@
+{
+  "modules": {
+    "portainer": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "doctor": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "rabbitmq": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "recording": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "infrastructure": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "database": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    },
+    "splunk": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "<TBD>"
+    }
+  },
+  "aggregation": {
+    "fail_blocks": "<TBD>",
+    "error_blocks": "<TBD>",
+    "manual_review_blocks": "<TBD>",
+    "skipped_blocks": "<TBD>",
+    "warning_overall_status": "<TBD>"
+  },
+  "parity": [
+    {
+      "enabled": "<TBD>",
+      "module": "<TBD>",
+      "fields": [
+        "<TBD>"
+      ],
+      "sites": [
+        "<TBD>",
+        "<TBD>"
+      ],
+      "mismatch_status": "<TBD>",
+      "allowed_differences": [
+        {
+          "field": "<TBD>",
+          "target": "<TBD>",
+          "site_values": {
+            "site1": "<TBD>",
+            "site2": "<TBD>"
+          }
+        }
+      ]
+    }
+  ],
+  "review": {
+    "general_notes_enabled": true,
+    "general_note_required": "<TBD>",
+    "required_module_notes": [
+      "portainer",
+      "doctor",
+      "rabbitmq",
+      "recording",
+      "infrastructure",
+      "database",
+      "splunk"
+    ],
+    "result_note_required_statuses": [
+      "<TBD>"
+    ],
+    "manual_review_acknowledgment_required": "<TBD>",
+    "recording_cleanup_acknowledgment_required": "<TBD>",
+    "reject_allowed": true,
+    "approval_status_policy": {
+      "WARNING": "<TBD>",
+      "FAIL": "<TBD>",
+      "ERROR": "<TBD>",
+      "SKIPPED": "<TBD>",
+      "MANUAL_REVIEW": "<TBD>"
+    }
+  },
+  "recovery": {
+    "heartbeat_timeout_seconds": "<TBD>",
+    "operator_instructions": "Do not start a new Weekend Report until recovery is completed.
+    Review the failed run and its evidence. After the
+    environment is confirmed clean, resolve the recovery state and run
+    a new Weekend Report."
+  }
+}

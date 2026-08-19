@@ -1,0 +1,83 @@
+image-build-smoke-export:
+  image: docker:27-cli
+  stage: image
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  needs:
+    - config-validation
+    - ruff
+    - mypy
+    - unit-tests
+    - integration-tests
+    - contract-tests
+    - postgres-concurrency
+    - safe-e2e
+    - dependency-audit
+    - docker-compose-validate
+  before_script:
+    - apk add --no-cache python3 gzip coreutils
+    - until docker info >/dev/null 2>&1; do sleep 1; done
+  script:
+    - export SHORT_SHA="$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-12)"
+    - |
+      test -f TAG || { echo "TAG file is missing" >&2; exit 1; }
+      export IMAGE_VERSION="$(tr -d '\r\n' < TAG)"
+      printf '%s' "$IMAGE_VERSION" |
+        grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' ||
+        { echo "TAG must contain a semantic version such as v1.0.1" >&2; exit 1; }
+
+    - export WEEKEND_REPORT_BUILD_ID="gl-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+    - export WEEKEND_REPORT_APP_VERSION="$IMAGE_VERSION"
+    - export LOCAL_IMAGE_TAG="weekend-report:ci-${SHORT_SHA}"
+    - export ARCHIVE_BASE="weekend-report_${IMAGE_VERSION}_${SHORT_SHA}"
+    - docker build --pull --label "org.opencontainers.image.title=Weekend Report Automation" --label "org.opencontainers.image.version=${IMAGE_VERSION}" --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" --label "org.opencontainers.image.source=${CI_PROJECT_URL}" --label "io.weekend-report.build-id=${WEEKEND_REPORT_BUILD_ID}" -t "$LOCAL_IMAGE_TAG" .
+    - docker image inspect --format '{{.Id}}' "$LOCAL_IMAGE_TAG" | tee image-id.txt
+    - python3 scripts/ci.py image-smoke --image "$LOCAL_IMAGE_TAG"
+    - mkdir -p dist
+    - docker save "$LOCAL_IMAGE_TAG" | gzip -1 > "dist/${ARCHIVE_BASE}.tar.gz"
+    - cd dist && sha256sum "${ARCHIVE_BASE}.tar.gz" > "${ARCHIVE_BASE}.tar.gz.sha256" && cd ..
+    - cp image-id.txt dist/image-id.txt
+    - |
+      if [ "${WEEKEND_REPORT_PUBLISH_IMAGE:-0}" = "1" ]; then
+        test -n "${CI_REGISTRY:-}" || {
+          echo "CI_REGISTRY is unavailable; cannot publish" >&2
+          exit 1
+        }
+
+        echo "$CI_REGISTRY_PASSWORD" |
+          docker login "$CI_REGISTRY" \
+            -u "$CI_REGISTRY_USER" \
+            --password-stdin
+
+        SHA_TAG="${CI_REGISTRY_IMAGE}:sha-${SHORT_SHA}"
+        docker tag "$LOCAL_IMAGE_TAG" "$SHA_TAG"
+        docker push "$SHA_TAG"
+
+        VERSION_TAG="${CI_REGISTRY_IMAGE}:${IMAGE_VERSION}"
+        docker tag "$LOCAL_IMAGE_TAG" "$VERSION_TAG"
+        docker push "$VERSION_TAG"
+
+        if [ "${WEEKEND_REPORT_PUBLISH_LATEST:-0}" = "1" ]; then
+          docker tag "$LOCAL_IMAGE_TAG" "${CI_REGISTRY_IMAGE}:latest"
+          docker push "${CI_REGISTRY_IMAGE}:latest"
+        fi
+      fi
+  artifacts:
+    when: always
+    name: "verified-weekend-report-image-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - dist/
+    expire_in: 14 days
+  interruptible: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - TAG
+      when: on_success
+
+    - when: never

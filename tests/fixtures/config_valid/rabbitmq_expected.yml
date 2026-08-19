@@ -1,0 +1,155 @@
+{
+  "collection_mode": "fixture",
+  "connections": {},
+  "defaults": {
+    "vhost": {
+      "required": true
+    },
+    "queue": {
+      "durable": true,
+      "auto_delete": false,
+      "exclusive": false,
+      "min_consumers": 1,
+      "warning_messages": 10,
+      "critical_messages": 20,
+      "required": true
+    },
+    "exchange": {
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "required": true
+    },
+    "binding": {
+      "destination_type": "queue",
+      "required": true
+    }
+  },
+  "topology": {
+    "vhosts": {
+      "/": {
+        "name": "/"
+      }
+    },
+    "queues": {
+      "recording.events": {
+        "vhost": "/",
+        "name": "recording.events"
+      }
+    },
+    "exchanges": {
+      "recording": {
+        "vhost": "/",
+        "name": "recording"
+      }
+    },
+    "bindings": {
+      "recording.events": {
+        "vhost": "/",
+        "source": "recording",
+        "destination": "recording.events",
+        "routing_key": "events.#"
+      }
+    }
+  },
+  "sites": {
+    "site1": {
+      "topology": "common",
+      "overrides": {}
+    },
+    "site2": {
+      "topology": "common",
+      "overrides": {}
+    }
+  },
+  "fixture_actual": {
+    "sites": {
+      "site1": {
+        "vhosts": [
+          {
+            "name": "/"
+          }
+        ],
+        "queues": [
+          {
+            "vhost": "/",
+            "name": "recording.events",
+            "durable": true,
+            "auto_delete": false,
+            "exclusive": false,
+            "consumers": 1,
+            "messages": 0
+          }
+        ],
+        "exchanges": [
+          {
+            "vhost": "/",
+            "name": "recording",
+            "type": "topic",
+            "durable": true,
+            "auto_delete": false
+          }
+        ],
+        "bindings": [
+          {
+            "vhost": "/",
+            "source": "recording",
+            "destination_type": "queue",
+            "destination": "recording.events",
+            "routing_key": "events.#"
+          }
+        ],
+        "nodes": [
+          {
+            "name": "rabbit@fixture1",
+            "mem_alarm": false,
+            "disk_free_alarm": false
+          }
+        ]
+      },
+      "site2": {
+        "vhosts": [
+          {
+            "name": "/"
+          }
+        ],
+        "queues": [
+          {
+            "vhost": "/",
+            "name": "recording.events",
+            "durable": true,
+            "auto_delete": false,
+            "exclusive": false,
+            "consumers": 1,
+            "messages": 0
+          }
+        ],
+        "exchanges": [
+          {
+            "vhost": "/",
+            "name": "recording",
+            "type": "topic",
+            "durable": true,
+            "auto_delete": false
+          }
+        ],
+        "bindings": [
+          {
+            "vhost": "/",
+            "source": "recording",
+            "destination_type": "queue",
+            "destination": "recording.events",
+            "routing_key": "events.#"
+          }
+        ],
+        "nodes": [
+          {
+            "name": "rabbit@fixture2",
+            "mem_alarm": false,
+            "disk_free_alarm": false
+          }
+        ]
+      }
+    }
+  }
+}

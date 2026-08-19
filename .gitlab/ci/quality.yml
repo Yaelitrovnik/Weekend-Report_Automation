@@ -1,0 +1,88 @@
+.python_gate:
+  image: python:3.14-slim
+  cache:
+    key: "pip-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .cache/pip/
+  before_script:
+    - python -m pip install -r requirements.txt
+
+config-validation:
+  extends: .python_gate
+  stage: validate
+  script:
+    - python scripts/ci.py config
+
+ruff:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py lint
+
+mypy:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py typecheck
+
+unit-tests:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py unit
+
+integration-tests:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py integration
+
+contract-tests:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py contract
+
+postgres-concurrency:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: weekend_report_ci_test
+    POSTGRES_USER: weekend_report_ci
+    POSTGRES_PASSWORD: ci-only-postgres-password
+    WEEKEND_REPORT_TEST_POSTGRES_URL: postgresql://weekend_report_ci:ci-only-postgres-password@postgres:5432/weekend_report_ci_test
+    WEEKEND_REPORT_TEST_POSTGRES_DISPOSABLE: "1"
+  script:
+    - python scripts/ci.py postgres
+
+safe-e2e:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py e2e
+
+dependency-audit:
+  extends: .python_gate
+  stage: quality
+  needs: [config-validation]
+  script:
+    - python scripts/ci.py audit
+
+docker-compose-validate:
+  image: docker:27-cli
+  stage: quality
+  needs: [config-validation]
+  before_script:
+    - apk add --no-cache python3
+  script:
+    - python3 scripts/ci.py compose-config

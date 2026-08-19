@@ -1,0 +1,82 @@
+{
+  "collection_mode": "live",
+  "connections": {
+    "site1": {
+      "url_env": "RABBITMQ_SITE1_URL",
+      "user_env": "RABBITMQ_SITE1_USER",
+      "password_env": "RABBITMQ_SITE1_PASSWORD",
+      "tls_verify": "<TBD>",
+      "timeout": "<TBD>",
+      "retry": "<TBD>"
+    },
+    "site2": {
+      "url_env": "RABBITMQ_SITE2_URL",
+      "user_env": "RABBITMQ_SITE2_USER",
+      "password_env": "RABBITMQ_SITE2_PASSWORD",
+      "tls_verify": "<TBD>",
+      "timeout": "<TBD>",
+      "retry": "<TBD>"
+    }
+  },
+  "defaults": {
+    "vhost": {
+      "required": true
+    },
+    "queue": {
+      "required": true,
+      "durable": "<TBD>",
+      "auto_delete": "<TBD>",
+      "exclusive": "<TBD>",
+      "min_consumers": "<TBD>",
+      "warning_messages": "<TBD>",
+      "critical_messages": "<TBD>"
+    },
+    "exchange": {
+      "required": true,
+      "durable": "<TBD>",
+      "auto_delete": "<TBD>"
+    },
+    "binding": {
+      "required": true
+    }
+  },
+  "topology": {
+    "vhosts": {
+      "<TBD>": {
+        "name": "<TBD>"
+      }
+    },
+    "queues": {
+      "<TBD>": {
+        "vhost": "<TBD>",
+        "name": "<TBD>"
+      }
+    },
+    "exchanges": {
+      "<TBD>": {
+        "vhost": "<TBD>",
+        "name": "<TBD>",
+        "type": "<TBD>"
+      }
+    },
+    "bindings": {
+      "<TBD>": {
+        "vhost": "<TBD>",
+        "source": "<TBD>",
+        "destination_type": "<TBD>",
+        "destination": "<TBD>",
+        "routing_key": "<TBD>"
+      }
+    }
+  },
+  "sites": {
+    "site1": {
+      "topology": "common",
+      "overrides": {}
+    },
+    "site2": {
+      "topology": "common",
+      "overrides": {}
+    }
+  }
+}

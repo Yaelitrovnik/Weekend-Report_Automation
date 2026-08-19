@@ -1,0 +1,88 @@
+{
+  "modules": {
+    "portainer": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "doctor": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "rabbitmq": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "recording": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "infrastructure": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "database": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    },
+    "splunk": {
+      "enabled": true,
+      "required": true,
+      "if_unavailable_status": "ERROR"
+    }
+  },
+  "aggregation": {
+    "fail_blocks": true,
+    "error_blocks": true,
+    "manual_review_blocks": true,
+    "skipped_blocks": true,
+    "warning_overall_status": "WARNING"
+  },
+  "parity": [
+    {
+      "enabled": true,
+      "module": "portainer",
+      "fields": [
+        "service_presence",
+        "desired_replicas",
+        "running_replicas",
+        "image"
+      ],
+      "sites": [
+        "site1",
+        "site2"
+      ],
+      "mismatch_status": "WARNING",
+      "allowed_differences": []
+    }
+  ],
+  "review": {
+    "general_notes_enabled": true,
+    "general_note_required": false,
+    "required_module_notes": [
+      "portainer"
+    ],
+    "result_note_required_statuses": [
+      "MANUAL_REVIEW"
+    ],
+    "manual_review_acknowledgment_required": true,
+    "recording_cleanup_acknowledgment_required": true,
+    "reject_allowed": true,
+    "approval_status_policy": {
+      "WARNING": "ALLOW",
+      "FAIL": "BLOCK",
+      "ERROR": "BLOCK",
+      "SKIPPED": "BLOCK",
+      "MANUAL_REVIEW": "REQUIRE_NOTE"
+    }
+  },
+  "recovery": {
+    "heartbeat_timeout_seconds": 900,
+    "operator_instructions": "Fixture recovery requires manual cleanup verification; never replay Recording start/stop."
+  }
+}

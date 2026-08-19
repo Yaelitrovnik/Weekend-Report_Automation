@@ -1,0 +1,87 @@
+{
+  "ssh": {
+    "username": "<TBD>",
+    "auth": "<TBD>",
+    "host_key_policy": "<TBD>",
+    "connect_timeout": "<TBD>",
+    "command_timeout": "<TBD>"
+  },
+  "sites": {
+    "site1": {
+      "servers": [
+        {
+          "id": "<TBD>",
+          "hostname": "<TBD>",
+          "required": "<TBD>",
+          "ssh_port": "<TBD>",
+          "filesystems": [
+            {
+              "filesystem": "<TBD>",
+              "mountpoint": "<TBD>",
+              "warning_percent": "<TBD>",
+              "critical_percent": "<TBD>",
+              "required": "<TBD>"
+            }
+          ],
+          "nfs_mounts": [
+            {
+              "source": "<TBD>",
+              "destination": "<TBD>",
+              "fs_type": "<TBD>",
+              "warning_percent": "<TBD>",
+              "critical_percent": "<TBD>",
+              "required": "<TBD>"
+            }
+          ],
+          "chrony": [
+            {
+              "timezone": "<TBD>",
+              "source": "<TBD>",
+              "warning_offset": "<TBD>",
+              "critical_offset": "<TBD>",
+              "required": "<TBD>"
+            }
+          ]
+        }
+      ]
+    },
+    "site2": {
+      "servers": [
+        {
+          "id": "<TBD>",
+          "hostname": "<TBD>",
+          "required": "<TBD>",
+          "ssh_port": "<TBD>",
+          "filesystems": [
+            {
+              "filesystem": "<TBD>",
+              "mountpoint": "<TBD>",
+              "warning_percent": "<TBD>",
+              "critical_percent": "<TBD>",
+              "required": "<TBD>"
+            }
+          ],
+          "nfs_mounts": [
+            {
+              "source": "<TBD>",
+              "destination": "<TBD>",
+              "fs_type": "<TBD>",
+              "warning_percent": "<TBD>",
+              "critical_percent": "<TBD>",
+              "required": "<TBD>"
+            }
+          ],
+          "chrony": [
+            {
+              "timezone": "<TBD>",
+              "source": "<TBD>",
+              "warning_offset": "<TBD>",
+              "critical_offset": "<TBD>",
+              "required": "<TBD>"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

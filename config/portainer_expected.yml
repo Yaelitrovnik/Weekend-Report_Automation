@@ -1,0 +1,88 @@
+{
+  "collection_mode": "live",
+  "defaults": {
+    "required": true,
+    "expected": {
+      "service_state": "<TBD>",
+      "task_state_policy": {
+        "failed": "FAIL",
+        "rejected": "FAIL",
+        "restarting": "FAIL",
+        "starting": "<TO_VERIFY>"
+      }
+    }
+  },
+  "services": {
+    "<TBD>": {
+      "name": "<TBD>",
+      "stack": "<TBD>",
+      "expected": {
+        "desired_replicas": "<TBD>",
+        "running_replicas": "<TBD>",
+        "healthy_replicas": "<TBD>",
+        "image": {
+          "reference": "<TBD>",
+          "comparison": "<TO_VERIFY>"
+        }
+      }
+    }
+  },
+  "sites": {
+    "site1": {
+      "environment_type": "docker_swarm",
+      "service_inventory": "common",
+      "connection": {
+        "url_env": "PORTAINER_SITE1_URL",
+        "endpoint_id": "<TBD>",
+        "api_contract": "<TO_VERIFY>",
+        "auth": {
+          "type": "<TO_VERIFY>",
+          "token_env": "PORTAINER_SITE1_TOKEN"
+        },
+        "tls": {
+          "verify": "<TO_VERIFY>",
+          "ca_file_env": "PORTAINER_SITE1_CA_FILE"
+        },
+        "timeouts": {
+          "connect_seconds": "<TBD>",
+          "read_seconds": "<TBD>"
+        },
+        "retries": {
+          "attempts": "<TBD>",
+          "backoff_seconds": "<TBD>"
+        }
+      },
+      "overrides": {
+        "services": {}
+      }
+    },
+    "site2": {
+      "environment_type": "docker_swarm",
+      "service_inventory": "common",
+      "connection": {
+        "url_env": "PORTAINER_SITE2_URL",
+        "endpoint_id": "<TBD>",
+        "api_contract": "<TO_VERIFY>",
+        "auth": {
+          "type": "<TO_VERIFY>",
+          "token_env": "PORTAINER_SITE2_TOKEN"
+        },
+        "tls": {
+          "verify": "<TO_VERIFY>",
+          "ca_file_env": "PORTAINER_SITE2_CA_FILE"
+        },
+        "timeouts": {
+          "connect_seconds": "<TBD>",
+          "read_seconds": "<TBD>"
+        },
+        "retries": {
+          "attempts": "<TBD>",
+          "backoff_seconds": "<TBD>"
+        }
+      },
+      "overrides": {
+        "services": {}
+      }
+    }
+  }
+}

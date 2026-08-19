@@ -1,0 +1,24 @@
+{
+  "collection_mode": "live",
+  "adapter": "existing_sync_function",
+  "function_reference": "<TBD>",
+  "algorithm": {
+    "description": "Use the approved existing database sync function: create temp table, verify replication to expected databases, delete temp table, verify deletion replicated.",
+    "rewrite_algorithm": false
+  },
+  "targets": {
+    "source_database": "<TBD>",
+    "expected_replica_databases": [
+      "<TBD>"
+    ],
+    "temp_table_definition": "<TBD>",
+    "cleanup_policy": "<TO_VERIFY>"
+  },
+  "required_secret_env": [
+    "<TBD>"
+  ],
+  "timeouts": {
+    "replication_seconds": "<TBD>",
+    "cleanup_seconds": "<TBD>"
+  }
+}
