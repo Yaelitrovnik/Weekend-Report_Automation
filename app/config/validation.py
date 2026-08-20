@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.config.effective import resolve_portainer_expected, resolve_rabbitmq_expected
+from app.config.models import validate_expected_state_schema
 from app.config.schema import (
     ALL_PLACEHOLDERS,
     NOT_APPLICABLE_ALLOWED_PATH_PARTS,
@@ -62,18 +63,6 @@ class ValidationReport:
         return [i.render() for i in self.errors + self.warnings]
 
 
-def iter_leaves(value: Any, prefix: str = ""):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            new_prefix = f"{prefix}.{key}" if prefix else str(key)
-            yield from iter_leaves(item, new_prefix)
-    elif isinstance(value, list):
-        for idx, item in enumerate(value):
-            yield from iter_leaves(item, f"{prefix}[{idx}]")
-    else:
-        yield prefix, value
-
-
 def _module_rules(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     modules = config.get("rules", {}).get("modules", {})
     if not isinstance(modules, dict):
@@ -105,6 +94,7 @@ def validate_config(
     config: dict[str, Any], *, production_preflight: bool = True
 ) -> ValidationReport:
     report = ValidationReport()
+    schema_issues = validate_expected_state_schema(config)
     sites = config.get("sites", {}).get("sites")
     if not isinstance(sites, list) or not sites:
         report.add_error("sites.sites", "must contain at least one site")
@@ -148,6 +138,10 @@ def validate_config(
     _validate_rabbitmq(config, report, production_preflight=production_preflight)
     _validate_database(config, report, production_preflight=production_preflight)
     _validate_thresholds(config, report)
+    reported_paths = {issue.path for issue in report.errors}
+    for issue in schema_issues:
+        if issue.path not in reported_paths:
+            report.add_error(issue.path, issue.message)
     _validate_runtime_environment(config, report, production_preflight=production_preflight)
     _validate_placeholders(config, report, production_preflight=production_preflight)
     return report
@@ -833,41 +827,90 @@ def _database_enabled(config: dict[str, Any]) -> bool:
 
 
 def _validate_thresholds(config: dict[str, Any], report: ValidationReport) -> None:
-    for path, value in iter_leaves(config):
-        if path.endswith("critical_messages"):
-            warning_path = path.removesuffix("critical_messages") + "warning_messages"
-            warning = _get_path(config, warning_path)
-            if isinstance(value, int | float) and isinstance(warning, int | float):
-                if value <= warning:
-                    report.add_error(
-                        path, "critical threshold must be greater than warning threshold"
+    rabbitmq = config.get("rabbitmq_expected", {})
+    if isinstance(rabbitmq, dict):
+        defaults = rabbitmq.get("defaults", {})
+        if isinstance(defaults, dict):
+            _validate_named_threshold(
+                defaults.get("queue"),
+                "rabbitmq_expected.defaults.queue",
+                "warning_messages",
+                "critical_messages",
+                report,
+            )
+        topology = rabbitmq.get("topology", {})
+        if isinstance(topology, dict):
+            queues = topology.get("queues", {})
+            if isinstance(queues, dict):
+                for name, queue in queues.items():
+                    _validate_named_threshold(
+                        queue,
+                        f"rabbitmq_expected.topology.queues.{name}",
+                        "warning_messages",
+                        "critical_messages",
+                        report,
                     )
-        if path.endswith("critical_percent"):
-            warning_path = path.removesuffix("critical_percent") + "warning_percent"
-            warning = _get_path(config, warning_path)
-            if isinstance(value, int | float) and isinstance(warning, int | float):
-                if value <= warning:
-                    report.add_error(
-                        path, "critical threshold must be greater than warning threshold"
+        sites = rabbitmq.get("sites", {})
+        if isinstance(sites, dict):
+            for site_id, site in sites.items():
+                if not isinstance(site, dict):
+                    continue
+                queues = site.get("queues", [])
+                if not isinstance(queues, list):
+                    continue
+                for index, queue in enumerate(queues):
+                    _validate_named_threshold(
+                        queue,
+                        f"rabbitmq_expected.sites.{site_id}.queues[{index}]",
+                        "warning_messages",
+                        "critical_messages",
+                        report,
                     )
 
-
-def _get_path(config: dict[str, Any], dotted: str) -> Any:
-    current: Any = config
-    normalized = dotted.replace("[", ".").replace("]", "")
-    for part in normalized.split("."):
-        if part == "":
+    server_sites = config.get("servers", {}).get("sites", {})
+    if not isinstance(server_sites, dict):
+        return
+    for site_id, site in server_sites.items():
+        if not isinstance(site, dict):
             continue
-        if part.isdigit() and isinstance(current, list):
-            idx = int(part)
-            if idx >= len(current):
-                return None
-            current = current[idx]
-        elif isinstance(current, dict):
-            current = current.get(part)
-        else:
-            return None
-    return current
+        servers = site.get("servers", [])
+        if not isinstance(servers, list):
+            continue
+        for server_index, server in enumerate(servers):
+            if not isinstance(server, dict):
+                continue
+            for section in ("filesystems", "nfs_mounts"):
+                thresholds = server.get(section, [])
+                if not isinstance(thresholds, list):
+                    continue
+                for index, threshold in enumerate(thresholds):
+                    if isinstance(threshold, dict):
+                        _validate_named_threshold(
+                            threshold,
+                            f"servers.sites.{site_id}.servers[{server_index}].{section}[{index}]",
+                            "warning_percent",
+                            "critical_percent",
+                            report,
+                        )
+
+
+def _validate_named_threshold(
+    threshold: Any,
+    path: str,
+    warning_field: str,
+    critical_field: str,
+    report: ValidationReport,
+) -> None:
+    if not isinstance(threshold, dict):
+        return
+    warning = threshold.get(warning_field)
+    critical = threshold.get(critical_field)
+    if isinstance(warning, int | float) and isinstance(critical, int | float):
+        if critical <= warning:
+            report.add_error(
+                f"{path}.{critical_field}",
+                "critical threshold must be greater than warning threshold",
+            )
 
 
 def _validate_runtime_environment(
@@ -919,7 +962,7 @@ def _validate_placeholders(
     production_preflight: bool,
 ) -> None:
     unresolved_is_blocking = production_preflight and _has_enabled_required_automation(config)
-    for path, value in iter_leaves(config):
+    for path, value in _config_values(config):
         if value not in ALL_PLACEHOLDERS:
             continue
         if value in UNRESOLVED_PLACEHOLDERS:
@@ -931,3 +974,17 @@ def _validate_placeholders(
         elif value == PLACEHOLDER_NOT_APPLICABLE:
             if not any(part in path for part in NOT_APPLICABLE_ALLOWED_PATH_PARTS):
                 report.add_error(path, "<NOT_APPLICABLE> is not permitted for this field")
+
+
+def _config_values(value: Any, prefix: str = ""):
+    """Yield unmodelled extension values for the repository-wide placeholder contract."""
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            yield from _config_values(item, path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _config_values(item, f"{prefix}[{index}]")
+    else:
+        yield prefix, value

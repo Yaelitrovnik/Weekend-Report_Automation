@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import unittest
 from unittest.mock import patch
@@ -29,6 +30,41 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertTrue(any("WEEKEND_REPORT_APP_VERSION" in line for line in report.lines()))
         self.assertTrue(any("WEEKEND_REPORT_BUILD_ID" in line for line in report.lines()))
+
+    def test_schema_reports_deep_wrong_expected_state_type(self):
+        config = copy.deepcopy(load_config_dir("tests/fixtures/config_valid"))
+        config["servers"]["sites"]["site1"]["servers"][0]["filesystems"][0][
+            "warning_percent"
+        ] = "eighty"
+
+        report = validate_config(config)
+
+        self.assertFalse(report.ok)
+        self.assertTrue(
+            any(
+                issue.path
+                == "servers.sites.site1.servers[0].filesystems[0].warning_percent"
+                and issue.message == "must be a number"
+                for issue in report.errors
+            ),
+            report.lines(),
+        )
+
+    def test_rabbitmq_threshold_keeps_legacy_source_path(self):
+        config = copy.deepcopy(load_config_dir("tests/fixtures/config_valid"))
+        config["rabbitmq_expected"]["defaults"]["queue"]["critical_messages"] = 10
+
+        report = validate_config(config)
+
+        self.assertTrue(
+            any(
+                issue.path
+                == "rabbitmq_expected.defaults.queue.critical_messages"
+                and issue.message == "critical threshold must be greater than warning threshold"
+                for issue in report.errors
+            ),
+            report.lines(),
+        )
 
 
 if __name__ == "__main__":
