@@ -4,7 +4,7 @@ import unittest
 from datetime import timedelta
 
 from app.database.repository import Repository
-from app.domain import CheckStatus, RunState
+from app.domain import CheckResult, CheckStatus, EvidenceRecord, RunState
 from app.orchestrator.lock import DuplicateActiveRun
 from app.time_utils import iso_now, utcnow
 
@@ -31,6 +31,38 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(run.state, RunState.FAILED)
         self.assertEqual(run.automation_status, CheckStatus.ERROR)
         self.assertIn("without replay", run.current_module)
+
+    def test_stale_run_failure_records_prior_results_and_evidence_summary(self):
+        self.stale_running_run("WR-20260811-000010", "portainer")
+        self.repo.add_result(
+            CheckResult(
+                "WR-20260811-000010",
+                "portainer",
+                "portainer.service.exists",
+                CheckStatus.PASS,
+                "service exists",
+                site="site1",
+            )
+        )
+        self.repo.add_evidence(
+            EvidenceRecord(
+                "WR-20260811-000010",
+                "portainer",
+                "site1",
+                "raw_collector",
+                "runs/WR-20260811-000010/portainer/raw-collector.json",
+                "checksum-value",
+                "application/json",
+            )
+        )
+        recovered = self.repo.recover_stale_runs(
+            heartbeat_timeout_seconds=60, worker_id="worker-b"
+        )
+        self.assertEqual(len(recovered), 1)
+        run = self.repo.get_run("WR-20260811-000010")
+        self.assertEqual(run.state, RunState.FAILED)
+        self.assertIsNotNone(run.failure_context)
+        self.assertIn("portainer: 1 result(s), 1 evidence file(s)", run.failure_context)
 
     def test_recording_stale_run_requires_manual_recovery(self):
         self.stale_running_run("WR-20260811-000000", "recording")

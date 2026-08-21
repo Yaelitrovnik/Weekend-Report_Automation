@@ -50,6 +50,22 @@
 </section>
 {% endif %}
 
+{% if run.failure_context %}
+<section class="panel status-left status-left-error">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Stale Worker Recovery</p>
+      <h2>Evidence Collected Before Failure</h2>
+    </div>
+  </div>
+  <p class="panel-copy">
+    This run was interrupted by a stale worker before reaching REVIEW_READY.
+    The following modules had already recorded results or evidence at that point:
+  </p>
+  <p>{{ run.failure_context }}</p>
+</section>
+{% endif %}
+
 <section class="summary-grid">
   <article class="summary-card">
     <p class="eyebrow">Run State</p>

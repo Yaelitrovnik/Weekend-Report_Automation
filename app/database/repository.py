@@ -55,6 +55,7 @@ class Repository:
         for statement in schema:
             self._execute(statement)
         self._ensure_run_column("build_id", "TEXT")
+        self._ensure_run_column("failure_context", "TEXT")
         if self.backend == "sqlite":
             self._execute(
                 """
@@ -254,6 +255,27 @@ class Repository:
                 (now, run_id),
             )
 
+    def _prior_evidence_summary(self, run_id: str) -> str | None:
+        """Summarize results/evidence already recorded for a run before it went stale.
+
+        Surfaced on stale-worker recovery so a reviewer looking at a FAILED or
+        RECOVERY_REQUIRED run can see what was already collected, without having
+        to dig through the evidence API separately.
+        """
+        results = self.list_results(run_id)
+        evidence = self.list_evidence(run_id)
+        if not results and not evidence:
+            return None
+        per_module: dict[str, dict[str, int]] = {}
+        for result in results:
+            per_module.setdefault(result.module, {"results": 0, "evidence": 0})["results"] += 1
+        for record in evidence:
+            per_module.setdefault(record.module, {"results": 0, "evidence": 0})["evidence"] += 1
+        return "; ".join(
+            f"{module}: {counts['results']} result(s), {counts['evidence']} evidence file(s)"
+            for module, counts in sorted(per_module.items())
+        )
+
     def recover_stale_runs(
         self, *, heartbeat_timeout_seconds: int, worker_id: str
     ) -> list[RunRecord]:
@@ -267,6 +289,7 @@ class Repository:
         now = iso_now()
         with self.transaction():
             for run in stale:
+                prior_evidence = self._prior_evidence_summary(run.run_id)
                 if run.current_module == "recording":
                     state = RunState.RECOVERY_REQUIRED
                     message = "stale worker during Recording; manual cleanup/recovery required"
@@ -276,13 +299,15 @@ class Repository:
                 self._execute(
                     """
                     UPDATE runs
-                    SET state=?, automation_status=?, current_module=?, finished_at=?, updated_at=?
+                    SET state=?, automation_status=?, current_module=?, failure_context=?,
+                        finished_at=?, updated_at=?
                     WHERE run_id=? AND state=?
                     """,
                     (
                         state.value,
                         CheckStatus.ERROR.value,
                         message,
+                        prior_evidence,
                         now,
                         now,
                         run.run_id,
@@ -578,6 +603,7 @@ def _run_from_row(row: Mapping[str, Any]) -> RunRecord:
         row["final_snapshot_path"],
         row["final_pdf_path"],
         row["final_pdf_checksum"],
+        row["failure_context"],
     )
 
 
