@@ -95,6 +95,32 @@ class CIConfigTests(unittest.TestCase):
         self.assertIn("< TAG", github_text)
         self.assertIn("< TAG", gitlab_text)
 
+    def test_image_workflows_never_derive_release_version_from_git_tags(self):
+        # Dedicated, single-purpose guard: kept separate from
+        # test_image_release_is_driven_by_tag_file so this specific
+        # invariant survives even if that test's other assertions are
+        # edited later. The root .gitlab-ci.yml legitimately references
+        # $CI_COMMIT_TAG as a pipeline-trigger condition in workflow.rules
+        # (running a pipeline when a real git tag is pushed) — that is a
+        # different concern from deriving the *release version* from it,
+        # and is intentionally NOT checked here.
+        github_text = self.github_image.read_text(encoding="utf-8")
+        gitlab_text = self.gitlab_image.read_text(encoding="utf-8")
+        forbidden = ("GITHUB_REF_NAME", "CI_COMMIT_TAG", "refs/tags/")
+        for token in forbidden:
+            self.assertNotIn(
+                token,
+                github_text,
+                f"{token} must not appear in {self.github_image}; "
+                "release version must come from the TAG file",
+            )
+            self.assertNotIn(
+                token,
+                gitlab_text,
+                f"{token} must not appear in {self.gitlab_image}; "
+                "release version must come from the TAG file",
+            )
+
     def test_ci_compose_uses_exact_image_and_fixture_config(self):
         text = self.ci_compose.read_text(encoding="utf-8")
         self.assertIn("WEEKEND_REPORT_CI_IMAGE", text)
