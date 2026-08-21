@@ -856,16 +856,27 @@ def _validate_thresholds(config: dict[str, Any], report: ValidationReport) -> No
                 if not isinstance(site, dict):
                     continue
                 queues = site.get("queues", [])
-                if not isinstance(queues, list):
-                    continue
-                for index, queue in enumerate(queues):
-                    _validate_named_threshold(
-                        queue,
-                        f"rabbitmq_expected.sites.{site_id}.queues[{index}]",
-                        "warning_messages",
-                        "critical_messages",
-                        report,
-                    )
+                if isinstance(queues, list):
+                    for index, queue in enumerate(queues):
+                        _validate_named_threshold(
+                            queue,
+                            f"rabbitmq_expected.sites.{site_id}.queues[{index}]",
+                            "warning_messages",
+                            "critical_messages",
+                            report,
+                        )
+                overrides = site.get("overrides", {})
+                if isinstance(overrides, dict):
+                    override_queues = overrides.get("queues", {})
+                    if isinstance(override_queues, dict):
+                        for name, override in override_queues.items():
+                            _validate_named_threshold(
+                                override,
+                                f"rabbitmq_expected.sites.{site_id}.overrides.queues.{name}",
+                                "warning_messages",
+                                "critical_messages",
+                                report,
+                            )
 
     server_sites = config.get("servers", {}).get("sites", {})
     if not isinstance(server_sites, dict):

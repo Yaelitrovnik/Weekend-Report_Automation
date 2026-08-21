@@ -12,6 +12,7 @@ from pydantic import (
     StrictStr,
     ValidationError,
 )
+from pydantic_core import ErrorDetails
 
 Placeholder = Literal["<TBD>", "<TO_VERIFY>", "<NOT_APPLICABLE>"]
 StrictNumber = StrictInt | StrictFloat | Placeholder
@@ -178,7 +179,7 @@ def validate_expected_state_schema(config: dict[str, Any]) -> list[SchemaIssue]:
     return []
 
 
-def _schema_issue(error: dict[str, Any]) -> SchemaIssue:
+def _schema_issue(error: ErrorDetails) -> SchemaIssue:
     location = _format_location(error["loc"])
     error_type = str(error["type"])
     if error_type in {"dict_type", "model_type"}:

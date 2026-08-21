@@ -65,6 +65,31 @@ class ConfigValidationTests(unittest.TestCase):
             ),
             report.lines(),
         )
+    def test_rabbitmq_threshold_override_is_still_validated(self):
+        config = copy.deepcopy(load_config_dir("tests/fixtures/config_valid"))
+        config["rabbitmq_expected"]["sites"]["site1"]["overrides"] = {
+            "queues": {
+                "recording.events": {
+                    "warning_messages": 20,
+                    "critical_messages": 10,
+                }
+            }
+        }
+
+        report = validate_config(config)
+
+        expected_path = (
+            "rabbitmq_expected.sites.site1.overrides.queues."
+            "recording.events.critical_messages"
+        )
+        self.assertTrue(
+            any(
+                issue.path == expected_path
+                and issue.message == "critical threshold must be greater than warning threshold"
+                for issue in report.errors
+            ),
+            report.lines(),
+        )
 
 
 if __name__ == "__main__":
