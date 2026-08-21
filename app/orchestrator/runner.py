@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import traceback
 from typing import Any
 
@@ -10,6 +11,7 @@ from app.collectors.portainer import PortainerCollector
 from app.collectors.rabbitmq import RabbitMQCollector
 from app.collectors.recording import RecordingCollector
 from app.domain import CheckResult, CheckStatus, EvidenceRecord, to_jsonable
+from app.logging_utils import duration_ms, get_logger
 from app.orchestrator.aggregation import aggregate_status
 from app.orchestrator.execution_plan import build_execution_plan
 from app.orchestrator.run_context import RunContext
@@ -21,6 +23,8 @@ from app.validators.portainer import PortainerValidator
 from app.validators.rabbitmq import RabbitMQValidator
 from app.validators.recording import RecordingValidator
 from app.validators.site_parity import SiteParityValidator
+
+logger = get_logger(__name__)
 
 COLLECTORS: dict[str, Any] = {
     "portainer": PortainerCollector,
@@ -43,15 +47,42 @@ VALIDATORS: dict[str, Any] = {
 
 class OrchestratorRunner:
     def run(self, context: RunContext) -> list[CheckResult]:
+        run_started = time.monotonic()
         all_results: list[CheckResult] = []
         for step in build_execution_plan(context.config):
             context.repository.heartbeat(context.run_id, current_module=step.module)
+            logger.debug(
+                "heartbeat written",
+                extra={"event": "heartbeat", "run_id": context.run_id, "module_name": step.module},
+            )
             started = iso_now()
+            module_started = time.monotonic()
+            logger.info(
+                "module started",
+                extra={
+                    "event": "module_start",
+                    "run_id": context.run_id,
+                    "module_name": step.module,
+                },
+            )
             raw_evidence: EvidenceRecord | None = None
             try:
                 collector = COLLECTORS[step.module]()
                 validator = VALIDATORS[step.module]()
+
+                collector_started = time.monotonic()
                 actual = collector.collect(context)
+                logger.info(
+                    "collector finished",
+                    extra={
+                        "event": "collector_finish",
+                        "run_id": context.run_id,
+                        "module_name": step.module,
+                        "duration_ms": duration_ms(collector_started),
+                        "outcome": "success",
+                    },
+                )
+
                 raw_evidence = context.evidence.write_json(
                     context.run_id,
                     step.module,
@@ -61,7 +92,20 @@ class OrchestratorRunner:
                     evidence_type="raw_collector",
                 )
                 context.repository.add_evidence(raw_evidence)
+
+                validator_started = time.monotonic()
                 results = validator.validate(actual, context.config, context)
+                logger.info(
+                    "validator finished",
+                    extra={
+                        "event": "validator_finish",
+                        "run_id": context.run_id,
+                        "module_name": step.module,
+                        "duration_ms": duration_ms(validator_started),
+                        "outcome": "success",
+                        "result_count": len(results),
+                    },
+                )
             except Exception as exc:
                 unavailable_status = _if_unavailable_status(context.config, step.module)
                 error_payload = {
@@ -101,6 +145,29 @@ class OrchestratorRunner:
                         },
                     )
                 ]
+                logger.warning(
+                    "module failed",
+                    extra={
+                        "event": "module_error",
+                        "run_id": context.run_id,
+                        "module_name": step.module,
+                        "duration_ms": duration_ms(module_started),
+                        "outcome": "error",
+                        "exception": type(exc).__name__,
+                    },
+                )
+            else:
+                logger.info(
+                    "module finished",
+                    extra={
+                        "event": "module_finish",
+                        "run_id": context.run_id,
+                        "module_name": step.module,
+                        "duration_ms": duration_ms(module_started),
+                        "outcome": "success",
+                        "result_count": len(results),
+                    },
+                )
             for result in results:
                 self._store_result_with_evidence(context, result, raw_evidence)
             all_results.extend(results)
@@ -119,6 +186,17 @@ class OrchestratorRunner:
         all_results.extend(parity)
         status = aggregate_status(all_results, context.config)
         context.repository.mark_review_ready(context.run_id, status)
+        logger.info(
+            "run finished",
+            extra={
+                "event": "run_finish",
+                "run_id": context.run_id,
+                "duration_ms": duration_ms(run_started),
+                "outcome": "success",
+                "overall_status": status.value,
+                "result_count": len(all_results),
+            },
+        )
         return all_results
 
     def _store_result_with_evidence(
