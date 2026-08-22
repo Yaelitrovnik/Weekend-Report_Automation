@@ -9,11 +9,18 @@ import secrets
 import time
 from typing import Any
 
+import jwt
 from fastapi import HTTPException, Request
 
 UNSET_RUNTIME_VALUES = {"", "<TBD>", "<TO_VERIFY>", "UNKNOWN"}
 CSRF_HEADER = "X-CSRF-Token"
 CSRF_TTL_SECONDS = 3600
+
+# Restricted to RS256 (asymmetric) only: accepting a broader algorithm list,
+# especially any symmetric algorithm (HS256) or "none", is the classic JWT
+# "algorithm confusion" vulnerability class. Extend this list deliberately
+# and only for algorithms the configured identity provider is known to use.
+OIDC_SUPPORTED_ALGORITHMS = ["RS256"]
 
 
 def resolve_reviewer(request: Request, *, mutating: bool = False) -> str:
@@ -92,10 +99,90 @@ def _reviewer_from_provider(request: Request, provider: str) -> str:
         if not reviewer:
             raise HTTPException(status_code=401, detail="reviewer identity header is missing")
         return reviewer
+    if provider == "oidc":
+        return _reviewer_from_oidc(request)
     raise HTTPException(
         status_code=503,
         detail=f"auth provider {provider!r} is not implemented; configure an approved provider",
     )
+
+
+def _reviewer_from_oidc(request: Request) -> str:
+    issuer = os.getenv("WEEKEND_REPORT_AUTH_OIDC_ISSUER", "").strip()
+    audience = os.getenv("WEEKEND_REPORT_AUTH_OIDC_AUDIENCE", "").strip()
+    jwks_url = os.getenv("WEEKEND_REPORT_AUTH_OIDC_JWKS_URL", "").strip()
+    reviewer_claim = (
+        os.getenv("WEEKEND_REPORT_AUTH_OIDC_REVIEWER_CLAIM", "email").strip() or "email"
+    )
+    for label, value in (
+        ("WEEKEND_REPORT_AUTH_OIDC_ISSUER", issuer),
+        ("WEEKEND_REPORT_AUTH_OIDC_AUDIENCE", audience),
+        ("WEEKEND_REPORT_AUTH_OIDC_JWKS_URL", jwks_url),
+    ):
+        if _is_unset(value):
+            raise HTTPException(
+                status_code=503,
+                detail=f"{label} is required for oidc auth",
+            )
+
+    token = _bearer_token(request)
+    if token is None:
+        raise HTTPException(status_code=401, detail="OIDC bearer token is missing")
+
+    claims = _decode_oidc_token(token, issuer=issuer, audience=audience, jwks_url=jwks_url)
+
+    reviewer = claims.get(reviewer_claim)
+    if not isinstance(reviewer, str) or not reviewer:
+        raise HTTPException(
+            status_code=401,
+            detail=f"OIDC token is missing required claim: {reviewer_claim!r}",
+        )
+    return reviewer
+
+
+def _bearer_token(request: Request) -> str | None:
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
+
+
+def _decode_oidc_token(
+    token: str, *, issuer: str, audience: str, jwks_url: str
+) -> dict[str, Any]:
+    signing_key = _oidc_signing_key(jwks_url, token)
+    try:
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=OIDC_SUPPORTED_ALGORITHMS,
+            audience=audience,
+            issuer=issuer,
+        )
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail=f"invalid OIDC token: {exc}") from exc
+    if not isinstance(claims, dict):
+        raise HTTPException(status_code=401, detail="OIDC token payload was not an object")
+    return claims
+
+
+def _oidc_signing_key(jwks_url: str, token: str) -> Any:
+    """Resolve the public key used to verify `token`, from the configured JWKS endpoint.
+
+    Isolated in its own function so tests can substitute a known key (see
+    tests/unit/test_auth.py) instead of making a real network call to a JWKS
+    endpoint. jwt.PyJWKClient handles fetching, caching, and kid-based key
+    selection rather than hand-rolling JWKS parsing here.
+    """
+    try:
+        client = jwt.PyJWKClient(jwks_url)
+        return client.get_signing_key_from_jwt(token).key
+    except jwt.PyJWKClientError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"unable to resolve OIDC signing key from {jwks_url}: {exc}",
+        ) from exc
 
 
 def _enforce_authorized_reviewer(reviewer: str) -> None:

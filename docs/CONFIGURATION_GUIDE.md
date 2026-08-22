@@ -85,6 +85,18 @@ If using the implemented `trusted_header` provider, also configure:
 WEEKEND_REPORT_AUTH_TRUSTED_HEADER
 ```
 
+If using the implemented `oidc` provider, also configure:
+
+```text
+WEEKEND_REPORT_AUTH_OIDC_ISSUER
+WEEKEND_REPORT_AUTH_OIDC_AUDIENCE
+WEEKEND_REPORT_AUTH_OIDC_JWKS_URL
+WEEKEND_REPORT_AUTH_OIDC_REVIEWER_CLAIM   (optional; defaults to "email")
+```
+
+OIDC tokens are verified against the issuer's published JWKS. Only RS256
+(asymmetric) signatures are accepted.
+
 Use trusted-header authentication only behind an approved reverse-proxy/authentication boundary.
 
 Production rejects arbitrary `X-Reviewer`.

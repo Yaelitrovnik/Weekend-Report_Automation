@@ -60,6 +60,10 @@ These values may remain organization-private. They do not need to be shared exte
 - `WEEKEND_REPORT_AUTH_MODE=production`;
 - `WEEKEND_REPORT_AUTH_PROVIDER`;
 - `WEEKEND_REPORT_AUTH_TRUSTED_HEADER` if applicable;
+- `WEEKEND_REPORT_AUTH_OIDC_ISSUER`, `WEEKEND_REPORT_AUTH_OIDC_AUDIENCE`, and
+  `WEEKEND_REPORT_AUTH_OIDC_JWKS_URL` if `WEEKEND_REPORT_AUTH_PROVIDER=oidc`
+  is used instead of `trusted_header` — real values are `<TBD>` until an
+  approved identity provider (issuer, audience, JWKS endpoint) is supplied;
 - `WEEKEND_REPORT_AUTHORIZED_REVIEWERS`;
 - `WEEKEND_REPORT_CSRF_SIGNING_KEY`;
 - approved CSRF TTL if default is not accepted.

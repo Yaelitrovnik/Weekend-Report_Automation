@@ -950,6 +950,14 @@ def _validate_runtime_environment(
             "runtime.auth",
             "WEEKEND_REPORT_AUTH_TRUSTED_HEADER must be set for trusted_header auth",
         )
+    elif provider == "oidc":
+        for env_name in (
+            "WEEKEND_REPORT_AUTH_OIDC_ISSUER",
+            "WEEKEND_REPORT_AUTH_OIDC_AUDIENCE",
+            "WEEKEND_REPORT_AUTH_OIDC_JWKS_URL",
+        ):
+            if _runtime_unset(os.getenv(env_name)):
+                report.add_error("runtime.auth", f"{env_name} must be set for oidc auth")
     if _runtime_unset(os.getenv("WEEKEND_REPORT_AUTHORIZED_REVIEWERS")):
         report.add_error(
             "runtime.auth",
