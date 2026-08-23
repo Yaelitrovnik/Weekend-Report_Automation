@@ -51,7 +51,7 @@ is the software-release/image-version source for CI image creation.
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 The release pipeline preserves the `v`.
@@ -289,7 +289,7 @@ At minimum, production requires real:
 - integration secrets for enabled live modules.
 
 For a verified release, set `WEEKEND_REPORT_IMAGE` to the loaded release tag, for example
-`weekend-report:v1.0.1`. Do not run production Compose with literal controlled placeholders as
+`weekend-report:v1.0.2`. Do not run production Compose with literal controlled placeholders as
 runtime values.
 
 ## 16. CI Configuration Is Not Production Configuration

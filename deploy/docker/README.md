@@ -14,8 +14,8 @@ traceability, auth, or mutation protection is incomplete.
 For a verified offline release, load the CI artifact and set:
 
 ```text
-WEEKEND_REPORT_IMAGE=weekend-report:v1.0.1
-WEEKEND_REPORT_APP_VERSION=v1.0.1
+WEEKEND_REPORT_IMAGE=weekend-report:v1.0.2
+WEEKEND_REPORT_APP_VERSION=v1.0.2
 WEEKEND_REPORT_BUILD_ID=<actual-build-id>
 ```
 

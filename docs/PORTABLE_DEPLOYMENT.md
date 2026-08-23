@@ -115,7 +115,7 @@ Root `TAG` is part of the project and must be transferred.
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 It is:
@@ -157,19 +157,19 @@ release-image-id.txt
 Example:
 
 ```text
-weekend-report_v1.0.1_abc123def456.tar.gz
+weekend-report_v1.0.2_abc123def456.tar.gz
 ```
 
 Verify:
 
 ```powershell
-Get-FileHash .\weekend-report_v1.0.1_<short-sha>.tar.gz -Algorithm SHA256
+Get-FileHash .\weekend-report_v1.0.2_<short-sha>.tar.gz -Algorithm SHA256
 ```
 
 Then load:
 
 ```powershell
-docker load -i .\weekend-report_v1.0.1_<short-sha>.tar.gz
+docker load -i .\weekend-report_v1.0.2_<short-sha>.tar.gz
 ```
 
 If the target Docker version requires an uncompressed TAR, decompress first.
@@ -177,7 +177,7 @@ If the target Docker version requires an uncompressed TAR, decompress first.
 After load, the expected local image tag is:
 
 ```text
-weekend-report:v1.0.1
+weekend-report:v1.0.2
 ```
 
 ## 7. Alternative: Build on Target PC
@@ -214,7 +214,7 @@ WEEKEND_REPORT_CSRF_SIGNING_KEY
 integration-specific credentials
 ```
 
-If a CI-built image uses `TAG=v1.0.1`, production `WEEKEND_REPORT_APP_VERSION` should correspond to that software version unless there is a documented packaging policy that says otherwise.
+If a CI-built image uses `TAG=v1.0.2`, production `WEEKEND_REPORT_APP_VERSION` should correspond to that software version unless there is a documented packaging policy that says otherwise.
 
 ## 9. Production Configuration
 
@@ -246,7 +246,7 @@ docker compose -f deploy/docker/compose.yml up -d
 
 `deploy/docker/compose.yml` uses `${WEEKEND_REPORT_IMAGE:-weekend-report:local}` for both web
 and worker. For release deployment, set `WEEKEND_REPORT_IMAGE` to the verified loaded tag such as
-`weekend-report:v1.0.1`.
+`weekend-report:v1.0.2`.
 
 Confirm:
 

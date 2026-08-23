@@ -43,7 +43,7 @@ jobs:
           version="$(tr -d '\r\n' < TAG)"
 
           if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "TAG must contain a semantic version such as v1.0.1" >&2
+            echo "TAG must contain a semantic version such as v1.0.2" >&2
             exit 1
           fi
 

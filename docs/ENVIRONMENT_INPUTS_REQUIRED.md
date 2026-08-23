@@ -54,7 +54,7 @@ These values may remain organization-private. They do not need to be shared exte
 ## 3. Runtime and Secrets
 
 - non-committed `.env`, Docker secret, or approved secret mechanism;
-- `WEEKEND_REPORT_IMAGE` such as `weekend-report:v1.0.1` after loading a verified release artifact;
+- `WEEKEND_REPORT_IMAGE` such as `weekend-report:v1.0.2` after loading a verified release artifact;
 - `POSTGRES_PASSWORD`;
 - `WEEKEND_REPORT_APP_VERSION`;
 - `WEEKEND_REPORT_BUILD_ID`;
@@ -251,7 +251,7 @@ TAG
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 No secret or environment-specific information belongs in this file.

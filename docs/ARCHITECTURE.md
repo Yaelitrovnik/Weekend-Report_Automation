@@ -309,7 +309,7 @@ Release-image versioning uses the root `TAG` file.
 Example:
 
 ```text
-TAG = v1.0.1
+TAG = v1.0.2
 ```
 
 The `v` prefix is preserved.

@@ -29,7 +29,7 @@ image-build-smoke-export:
       export IMAGE_VERSION="$(tr -d '\r\n' < TAG)"
       printf '%s' "$IMAGE_VERSION" |
         grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' ||
-        { echo "TAG must contain a semantic version such as v1.0.1" >&2; exit 1; }
+        { echo "TAG must contain a semantic version such as v1.0.2" >&2; exit 1; }
 
     - export WEEKEND_REPORT_BUILD_ID="gl-${CI_PIPELINE_ID}-${CI_JOB_ID}"
     - export WEEKEND_REPORT_APP_VERSION="$IMAGE_VERSION"

@@ -72,7 +72,7 @@ TAG
 Example content:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 The file contains one semantic-style version value and preserves the leading `v`.
@@ -130,7 +130,7 @@ Path:
 Valid example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 Recommended validation expression:
@@ -142,11 +142,11 @@ Recommended validation expression:
 Release version usage:
 
 ```text
-TAG value       v1.0.1
-OCI version     v1.0.1
-registry tag    :v1.0.1
-local image      weekend-report:v1.0.1
-archive prefix  weekend-report_v1.0.1_
+TAG value       v1.0.2
+OCI version     v1.0.2
+registry tag    :v1.0.2
+local image      weekend-report:v1.0.2
+archive prefix  weekend-report_v1.0.2_
 ```
 
 Normal CI/SHA identities remain separate:
@@ -399,7 +399,7 @@ When enabled, publish the already-tested image as:
 
 ```text
 ghcr.io/<owner>/<repo>:sha-<short-sha>
-ghcr.io/<owner>/<repo>:v1.0.1
+ghcr.io/<owner>/<repo>:v1.0.2
 ```
 
 Optional:
@@ -487,13 +487,13 @@ release-image-id.txt
 Example:
 
 ```text
-weekend-report_v1.0.1_abc123def456.tar.gz
+weekend-report_v1.0.2_abc123def456.tar.gz
 ```
 
 Verify after transfer:
 
 ```powershell
-Get-FileHash .\weekend-report_v1.0.1_<short-sha>.tar.gz -Algorithm SHA256
+Get-FileHash .\weekend-report_v1.0.2_<short-sha>.tar.gz -Algorithm SHA256
 ```
 
 Compare with the `.sha256` file.
@@ -501,7 +501,7 @@ Compare with the `.sha256` file.
 Load:
 
 ```powershell
-docker load -i .\weekend-report_v1.0.1_<short-sha>.tar.gz
+docker load -i .\weekend-report_v1.0.2_<short-sha>.tar.gz
 ```
 
 If the local Docker version requires decompression first, decompress to `.tar` then load.
@@ -509,7 +509,7 @@ If the local Docker version requires decompression first, decompress to `.tar` t
 After load, the image tag available for deployment is:
 
 ```text
-weekend-report:v1.0.1
+weekend-report:v1.0.2
 ```
 
 ## 13. Release Procedure
@@ -534,13 +534,13 @@ When the normal quality pipeline is green and the code is ready:
 
 ```diff
 -v1.0.0
-+v1.0.1
++v1.0.2
 ```
 
 3. commit:
 
 ```text
-chore(release): bump version to v1.0.1
+chore(release): bump version to v1.0.2
 ```
 
 4. push the default/release branch.

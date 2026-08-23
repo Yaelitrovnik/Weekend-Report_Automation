@@ -124,20 +124,20 @@ TAG changed on main/default branch
 -> optional registry tags point to the same image
 ```
 
-The root `TAG` file remains `v1.0.1` and preserves the leading `v`.
+The root `TAG` file remains `v1.0.2` and preserves the leading `v`.
 
 ## 5. Offline Image Behavior
 
 The release artifact name remains:
 
 ```text
-weekend-report_v1.0.1_<short-sha>.tar.gz
+weekend-report_v1.0.2_<short-sha>.tar.gz
 ```
 
 After `docker load` of that artifact, the expected deployable image tag is:
 
 ```text
-weekend-report:v1.0.1
+weekend-report:v1.0.2
 ```
 
 The archive is produced from `weekend-report:<TAG>`, not only from the temporary CI tag.
@@ -159,8 +159,8 @@ weekend-report:local
 Verified release deployment example:
 
 ```text
-WEEKEND_REPORT_IMAGE=weekend-report:v1.0.1
-WEEKEND_REPORT_APP_VERSION=v1.0.1
+WEEKEND_REPORT_IMAGE=weekend-report:v1.0.2
+WEEKEND_REPORT_APP_VERSION=v1.0.2
 WEEKEND_REPORT_BUILD_ID=<actual-build-id>
 ```
 
@@ -258,7 +258,7 @@ Image-ID invariant:
 PASS
 weekend-report:python314
 weekend-report:ci-6b731139296c
-weekend-report:v1.0.1
+weekend-report:v1.0.2
 ```
 
 all pointed to:
@@ -271,7 +271,7 @@ Image cleanup:
 
 - removed temporary `weekend-report:python314`;
 - removed temporary `weekend-report:ci-6b731139296c`;
-- removed temporary `weekend-report:v1.0.1`;
+- removed temporary `weekend-report:v1.0.2`;
 - no validation containers, volumes, or networks remained.
 
 Pre-existing local images `weekend-report:ui-validation`, `weekend-report:local`, and
