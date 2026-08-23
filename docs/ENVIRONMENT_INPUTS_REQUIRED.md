@@ -1,6 +1,6 @@
 # Environment Inputs Required
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 Production execution remains blocked until the owner supplies and approves the environment-specific values and policy decisions below.
 
@@ -54,16 +54,13 @@ These values may remain organization-private. They do not need to be shared exte
 ## 3. Runtime and Secrets
 
 - non-committed `.env`, Docker secret, or approved secret mechanism;
+- `WEEKEND_REPORT_IMAGE` such as `weekend-report:v1.0.1` after loading a verified release artifact;
 - `POSTGRES_PASSWORD`;
 - `WEEKEND_REPORT_APP_VERSION`;
 - `WEEKEND_REPORT_BUILD_ID`;
 - `WEEKEND_REPORT_AUTH_MODE=production`;
 - `WEEKEND_REPORT_AUTH_PROVIDER`;
 - `WEEKEND_REPORT_AUTH_TRUSTED_HEADER` if applicable;
-- `WEEKEND_REPORT_AUTH_OIDC_ISSUER`, `WEEKEND_REPORT_AUTH_OIDC_AUDIENCE`, and
-  `WEEKEND_REPORT_AUTH_OIDC_JWKS_URL` if `WEEKEND_REPORT_AUTH_PROVIDER=oidc`
-  is used instead of `trusted_header` — real values are `<TBD>` until an
-  approved identity provider (issuer, audience, JWKS endpoint) is supplied;
 - `WEEKEND_REPORT_AUTHORIZED_REVIEWERS`;
 - `WEEKEND_REPORT_CSRF_SIGNING_KEY`;
 - approved CSRF TTL if default is not accepted.

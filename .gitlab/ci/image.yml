@@ -34,14 +34,27 @@ image-build-smoke-export:
     - export WEEKEND_REPORT_BUILD_ID="gl-${CI_PIPELINE_ID}-${CI_JOB_ID}"
     - export WEEKEND_REPORT_APP_VERSION="$IMAGE_VERSION"
     - export LOCAL_IMAGE_TAG="weekend-report:ci-${SHORT_SHA}"
+    - export RELEASE_IMAGE_TAG="weekend-report:${IMAGE_VERSION}"
     - export ARCHIVE_BASE="weekend-report_${IMAGE_VERSION}_${SHORT_SHA}"
     - docker build --pull --label "org.opencontainers.image.title=Weekend Report Automation" --label "org.opencontainers.image.version=${IMAGE_VERSION}" --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" --label "org.opencontainers.image.source=${CI_PROJECT_URL}" --label "io.weekend-report.build-id=${WEEKEND_REPORT_BUILD_ID}" -t "$LOCAL_IMAGE_TAG" .
     - docker image inspect --format '{{.Id}}' "$LOCAL_IMAGE_TAG" | tee image-id.txt
     - python3 scripts/ci.py image-smoke --image "$LOCAL_IMAGE_TAG"
+    - docker tag "$LOCAL_IMAGE_TAG" "$RELEASE_IMAGE_TAG"
+    - |
+      RELEASE_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$RELEASE_IMAGE_TAG")"
+      BUILT_IMAGE_ID="$(cat image-id.txt)"
+      if [ "$RELEASE_IMAGE_ID" != "$BUILT_IMAGE_ID" ]; then
+        echo "Release tag does not point to the exact smoked image" >&2
+        echo "build=$BUILT_IMAGE_ID" >&2
+        echo "release=$RELEASE_IMAGE_ID" >&2
+        exit 1
+      fi
+      printf '%s\n' "$RELEASE_IMAGE_ID" > release-image-id.txt
     - mkdir -p dist
-    - docker save "$LOCAL_IMAGE_TAG" | gzip -1 > "dist/${ARCHIVE_BASE}.tar.gz"
+    - docker save "$RELEASE_IMAGE_TAG" | gzip -1 > "dist/${ARCHIVE_BASE}.tar.gz"
     - cd dist && sha256sum "${ARCHIVE_BASE}.tar.gz" > "${ARCHIVE_BASE}.tar.gz.sha256" && cd ..
     - cp image-id.txt dist/image-id.txt
+    - cp release-image-id.txt dist/release-image-id.txt
     - |
       if [ "${WEEKEND_REPORT_PUBLISH_IMAGE:-0}" = "1" ]; then
         test -n "${CI_REGISTRY:-}" || {
@@ -55,15 +68,15 @@ image-build-smoke-export:
             --password-stdin
 
         SHA_TAG="${CI_REGISTRY_IMAGE}:sha-${SHORT_SHA}"
-        docker tag "$LOCAL_IMAGE_TAG" "$SHA_TAG"
+        docker tag "$RELEASE_IMAGE_TAG" "$SHA_TAG"
         docker push "$SHA_TAG"
 
         VERSION_TAG="${CI_REGISTRY_IMAGE}:${IMAGE_VERSION}"
-        docker tag "$LOCAL_IMAGE_TAG" "$VERSION_TAG"
+        docker tag "$RELEASE_IMAGE_TAG" "$VERSION_TAG"
         docker push "$VERSION_TAG"
 
         if [ "${WEEKEND_REPORT_PUBLISH_LATEST:-0}" = "1" ]; then
-          docker tag "$LOCAL_IMAGE_TAG" "${CI_REGISTRY_IMAGE}:latest"
+          docker tag "$RELEASE_IMAGE_TAG" "${CI_REGISTRY_IMAGE}:latest"
           docker push "${CI_REGISTRY_IMAGE}:latest"
         fi
       fi

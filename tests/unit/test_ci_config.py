@@ -52,11 +52,18 @@ class CIConfigTests(unittest.TestCase):
         self.assertIn("needs: quality", text)
         build = text.index("Build image only after all pre-image gates pass")
         smoke = text.index("Smoke-test the exact built image")
+        version_tag = text.index("Version-tag the exact smoked image")
         export = text.index("Export verified offline image artifact")
         publish = text.index("Publish the exact verified image")
         self.assertLess(build, smoke)
-        self.assertLess(smoke, export)
+        self.assertLess(smoke, version_tag)
+        self.assertLess(version_tag, export)
         self.assertLess(export, publish)
+        self.assertIn("docker tag", text)
+        self.assertIn('release_image_tag="weekend-report:${version}"', text)
+        self.assertIn('docker save "${{ steps.identity.outputs.release_image_tag }}"', text)
+        self.assertIn("release-image-id.txt", text)
+        self.assertIn("Release tag does not point to the exact smoked image", text)
         self.assertNotIn("continue-on-error", text)
 
     def test_gitlab_image_needs_all_quality_jobs(self):
@@ -76,8 +83,13 @@ class CIConfigTests(unittest.TestCase):
             self.assertIn(f"- {gate}", text)
         self.assertNotIn("allow_failure: true", text)
         self.assertLess(text.index("docker build"), text.index("image-smoke"))
-        self.assertLess(text.index("image-smoke"), text.index("docker save"))
+        self.assertLess(text.index("image-smoke"), text.index('docker tag "$LOCAL_IMAGE_TAG"'))
+        self.assertLess(text.index('docker tag "$LOCAL_IMAGE_TAG"'), text.index("docker save"))
         self.assertLess(text.index("docker save"), text.index("WEEKEND_REPORT_PUBLISH_IMAGE"))
+        self.assertIn('RELEASE_IMAGE_TAG="weekend-report:${IMAGE_VERSION}"', text)
+        self.assertIn('docker save "$RELEASE_IMAGE_TAG"', text)
+        self.assertIn("release-image-id.txt", text)
+        self.assertIn("Release tag does not point to the exact smoked image", text)
 
     def test_image_release_is_driven_by_tag_file(self):
         github_text = self.github_image.read_text(encoding="utf-8")
@@ -85,6 +97,9 @@ class CIConfigTests(unittest.TestCase):
 
         self.assertIn("paths:", github_text)
         self.assertIn("- TAG", github_text)
+        self.assertIn("< TAG", github_text)
+        self.assertIn("branches:", github_text)
+        self.assertIn("- main", github_text)
         self.assertNotIn("GITHUB_REF_NAME", github_text)
         self.assertNotIn("refs/tags/", github_text)
 
@@ -92,34 +107,11 @@ class CIConfigTests(unittest.TestCase):
         self.assertIn("- TAG", gitlab_text)
         self.assertNotIn("CI_COMMIT_TAG", gitlab_text)
 
-        self.assertIn("< TAG", github_text)
         self.assertIn("< TAG", gitlab_text)
 
-    def test_image_workflows_never_derive_release_version_from_git_tags(self):
-        # Dedicated, single-purpose guard: kept separate from
-        # test_image_release_is_driven_by_tag_file so this specific
-        # invariant survives even if that test's other assertions are
-        # edited later. The root .gitlab-ci.yml legitimately references
-        # $CI_COMMIT_TAG as a pipeline-trigger condition in workflow.rules
-        # (running a pipeline when a real git tag is pushed) — that is a
-        # different concern from deriving the *release version* from it,
-        # and is intentionally NOT checked here.
-        github_text = self.github_image.read_text(encoding="utf-8")
-        gitlab_text = self.gitlab_image.read_text(encoding="utf-8")
-        forbidden = ("GITHUB_REF_NAME", "CI_COMMIT_TAG", "refs/tags/")
-        for token in forbidden:
-            self.assertNotIn(
-                token,
-                github_text,
-                f"{token} must not appear in {self.github_image}; "
-                "release version must come from the TAG file",
-            )
-            self.assertNotIn(
-                token,
-                gitlab_text,
-                f"{token} must not appear in {self.gitlab_image}; "
-                "release version must come from the TAG file",
-            )
+    def test_gitlab_pipeline_is_not_git_tag_triggered(self):
+        text = self.gitlab_root.read_text(encoding="utf-8")
+        self.assertNotIn("CI_COMMIT_TAG", text)
 
     def test_ci_compose_uses_exact_image_and_fixture_config(self):
         text = self.ci_compose.read_text(encoding="utf-8")

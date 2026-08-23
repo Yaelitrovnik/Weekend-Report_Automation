@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Synchronized:** 2026-08-19
+**Synchronized:** 2026-08-23
 
 Read in this order:
 
@@ -21,5 +21,6 @@ Python runtime: Python 3.14
 Release trigger/version: root TAG file
 Normal commit: quality gates only
 TAG change: quality gates -> build -> exact-image smoke -> verified artifact
+Verified artifact loads as: weekend-report:<TAG>
 Production run: manual FastAPI action only
 ```

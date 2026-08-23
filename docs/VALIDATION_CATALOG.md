@@ -1,6 +1,6 @@
 # Validation Catalog
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 Controlled placeholders (`<TBD>`, `<TO_VERIFY>`) are not production-ready.
 
@@ -671,12 +671,16 @@ Required sequence:
 build exact image
 -> record identity
 -> smoke exact image
--> export same image
+-> tag same image as weekend-report:<TAG>
+-> verify image IDs match
+-> export weekend-report:<TAG>
 -> optional push same image
 ```
 
 FAIL:
 - export/publish happens before smoke;
+- exported archive contains only the CI tag instead of weekend-report:<TAG>;
+- release tag does not point to the same image ID as the smoked CI tag;
 - a different image is rebuilt after smoke;
 - smoke failure still permits release.
 

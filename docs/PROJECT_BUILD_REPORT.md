@@ -1,465 +1,431 @@
 # Project Build Report
 
-**Updated:** 2026-08-19
+**Updated:** 2026-08-23
 
-## 1. Current State
+## 1. Baseline Replacement
 
-The Weekend Report project has completed:
-
-- core framework implementation;
-- production security/review hardening;
-- portability hardening;
-- Python 3.14 migration;
-- shared local CI command contract;
-- GitHub Actions quality pipeline;
-- GitHub verified-image pipeline;
-- GitLab quality/image pipeline definitions for later use;
-- disposable PostgreSQL concurrency testing;
-- exact-image Docker smoke testing;
-- TAG-file-driven release versioning/trigger design.
-
-No real production Portainer/RabbitMQ/SSH/Database/DOCTOR/Recording integration has been enabled through this documentation pass.
-
-## 2. Current Runtime Baseline
+The project source was completely replaced with the supplied home ZIP baseline:
 
 ```text
-Python:          3.14
-Docker base:     python:3.14-slim-bookworm
-Validated image: Python 3.14.7
-PostgreSQL:      16-alpine
+C:\Users\Administrator\Downloads\Weekend-Report_Automation-master.zip
 ```
 
-Python 3.14 dependency compatibility changes included:
-
-- Python-3.14-compatible PyYAML;
-- Python-3.14-compatible Psycopg binary;
-- PyYAML typing stubs for Mypy;
-- Ruff import fixes;
-- removal of obsolete Mypy ignore for `yaml`.
-
-## 3. Core Application Capabilities
-
-Implemented:
-
-- FastAPI web UI/API;
-- persistent worker;
-- PostgreSQL repository/migrations;
-- SQLite fixture-test path;
-- run states;
-- singleton execution lock;
-- worker heartbeat/current module;
-- stale-worker/recovery behavior;
-- protected production read/mutation paths;
-- reviewer-bound CSRF;
-- result/evidence persistence;
-- checksum/path controls;
-- HTML review;
-- module/result/Splunk/general notes;
-- finalization-readiness policy;
-- configured aggregation;
-- immutable snapshot;
-- one multi-page final PDF;
-- protected final-PDF serving;
-- portable traceability.
-
-## 4. Module Boundaries
-
-### Portainer
-
-Implemented generic read-only Docker Swarm Service collector/validator architecture, fixture mode, sanitization, task-state/image/replica/parity tests.
-
-Live mode requires real approved environment details.
-
-### RabbitMQ
-
-Expected-state/topology validation architecture exists; real Management API configuration is still environment-dependent.
-
-### Recording
-
-Existing-device start/stop safety model exists.
-
-Real state-changing live calls remain disabled until approved.
-
-### Database
-
-Owner-supplied sync-function adapter boundary exists.
-
-Live execution remains blocked until the approved function/contract is provided.
-
-### Infrastructure
-
-Filesystem/NFS/Chrony validators exist.
-
-Live SSH is environment-dependent.
-
-### DOCTOR / Splunk
-
-Manual/API and manual-dashboard-review boundaries exist; production definitions are still required.
-
-## 5. CI/CD Architecture
-
-Shared command contract:
+The active project root is:
 
 ```text
-scripts/ci.py
+C:\Users\Administrator\Desktop\Projects\Yael\weekend_report\weekend-report
 ```
 
-Safe E2E:
+The root contains the expected ZIP project shape:
 
 ```text
-scripts/ci_e2e.py
-```
-
-CI-only exact-image Compose:
-
-```text
-deploy/docker/compose.ci.yml
-```
-
-GitHub:
-
-```text
-.github/workflows/quality-gates.yml
-.github/workflows/build-image.yml
-```
-
-GitLab:
-
-```text
+.github/
+.gitlab/
+app/
+config/
+deploy/
+docs/
+scripts/
+tests/
+.dockerignore
+.env.example
+.gitignore
 .gitlab-ci.yml
-.gitlab/ci/quality.yml
-.gitlab/ci/image.yml
-```
-
-## 6. Pre-Image Gates
-
-Release-blocking gates:
-
-```text
-Config validation
-Ruff
-Mypy
-Unit tests
-Contract tests
-Integration tests
-PostgreSQL concurrency
-Safe fixture E2E
-pip-audit
-Docker Compose validation
-```
-
-A failure stops image creation.
-
-## 7. Release Trigger Model
-
-The root:
-
-```text
+AGENTS.md
+Dockerfile
+pyproject.toml
+README.md
+requirements.txt
 TAG
 ```
 
-is the authoritative release trigger/version source.
+Intentionally preserved outside the ZIP:
 
-Example:
+- `.git/` repository metadata.
+
+No real local `.env`, certificates, private keys, or production secrets were copied into source.
+No branch, commit, push, Git tag, release publication, or `TAG` bump was performed.
+
+## 2. Files Changed After Replacement
+
+Files modified after the home ZIP baseline was copied:
 
 ```text
-v1.0.1
+.env.example
+.github/workflows/build-image.yml
+.gitlab-ci.yml
+.gitlab/ci/image.yml
+Dockerfile
+README.md
+deploy/docker/README.md
+deploy/docker/compose.yml
+deploy/docker/env.example
+docs/ARCHITECTURE.md
+docs/CI_CD.md
+docs/CONFIGURATION_GUIDE.md
+docs/DOCUMENTATION_INDEX.md
+docs/ENVIRONMENT_INPUTS_REQUIRED.md
+docs/PORTABLE_DEPLOYMENT.md
+docs/PROJECT_BUILD_REPORT.md
+docs/RECOVERY_POLICY.md
+docs/VALIDATION_CATALOG.md
+scripts/migrate.py
+tests/unit/test_ci_config.py
+tests/unit/test_docker_config.py
+tests/unit/test_recovery.py
 ```
 
-Normal commits:
+## 3. Required Fixes Implemented
+
+- GitHub image workflow now builds `weekend-report:ci-<short-sha>`, records its image ID,
+  smoke-tests that exact image, tags the same image as `weekend-report:<TAG>`, verifies matching
+  image IDs, and saves the versioned release image.
+- GitLab image workflow now follows the same build-once, smoke-once, version-tag-same-image,
+  export-same-image sequence.
+- GitLab root workflow no longer starts pipelines solely because a Git tag was pushed.
+- GitHub release branch was verified locally as `origin/main`; the image workflow now uses `main`.
+- Production Compose no longer has a production `build:` path and uses
+  `${WEEKEND_REPORT_IMAGE:-weekend-report:local}` for both web and worker.
+- `.env.example` and `deploy/docker/env.example` are template-only and use `<TBD>` for unresolved
+  runtime identity values; both include `WEEKEND_REPORT_IMAGE=weekend-report:local`.
+- `docs/RECOVERY_POLICY.md` was restored to the full stale-worker/Recording recovery policy.
+- Docker base image was pinned to the locally verified Python 3.14 Slim Bookworm digest:
+  `sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52`.
+- `scripts/migrate.py` now closes its repository connection deterministically.
+- Regression tests were strengthened for CI release invariants, Compose image selection,
+  environment templates, Dockerfile digest pinning, and recovery-policy coverage.
+
+## 4. Final Release Flow
+
+Normal source commit:
 
 ```text
-quality only
-NO release image
+source change
+-> config validation
+-> Ruff
+-> Mypy
+-> unit / contract / integration / PostgreSQL concurrency / safe E2E
+-> pip-audit
+-> Compose validation
+-> no release image
 ```
 
-TAG change on the configured release/default branch:
+TAG release:
 
 ```text
-quality gates again
--> image build
--> exact-image smoke
--> verified archive/checksum
--> optional registry publication
+TAG changed on main/default branch
+-> pre-image quality gates
+-> build weekend-report:ci-<short-sha>
+-> record image ID
+-> smoke weekend-report:ci-<short-sha>
+-> docker tag same image weekend-report:<TAG>
+-> verify CI tag ID == release tag ID
+-> docker save weekend-report:<TAG>
+-> optional registry tags point to the same image
 ```
 
-The `v` prefix is preserved.
+The root `TAG` file remains `v1.0.1` and preserves the leading `v`.
 
-Git tags (`GITHUB_REF_NAME`, `CI_COMMIT_TAG`) are not the application release-version source.
+## 5. Offline Image Behavior
 
-## 8. Local Python 3.14 Validation Results
-
-Verified during the current migration cycle:
-
-### Configuration
-
-PASS:
+The release artifact name remains:
 
 ```text
-python scripts/ci.py config
+weekend-report_v1.0.1_<short-sha>.tar.gz
 ```
 
-The production-template half intentionally reported unresolved placeholders and ended with:
+After `docker load` of that artifact, the expected deployable image tag is:
 
 ```text
-Configuration invalid as expected
+weekend-report:v1.0.1
 ```
 
-### Ruff
+The archive is produced from `weekend-report:<TAG>`, not only from the temporary CI tag.
 
-PASS:
+## 6. Production Compose Behavior
+
+`deploy/docker/compose.yml` selects the application image for both web and worker with:
 
 ```text
-python scripts/ci.py lint
+WEEKEND_REPORT_IMAGE
 ```
 
-### Mypy
-
-PASS:
+Default local value:
 
 ```text
-python scripts/ci.py typecheck
+weekend-report:local
 ```
 
-Result observed:
+Verified release deployment example:
 
 ```text
-Success: no issues found in 95 source files
+WEEKEND_REPORT_IMAGE=weekend-report:v1.0.1
+WEEKEND_REPORT_APP_VERSION=v1.0.1
+WEEKEND_REPORT_BUILD_ID=<actual-build-id>
 ```
 
-Informational `annotation-unchecked` notes remain non-failing.
+Real runtime secrets must come from a non-committed `.env`, Docker secret, or approved secret
+mechanism. Literal `<TBD>` values are not accepted as production runtime secrets/identity.
 
-### Unit
+## 7. Test Results
 
-PASS before the final TAG-only regression correction:
+Unittest suites:
 
 ```text
-75 unit tests passed
+PASS: 88
+FAIL: 0
+SKIP: 0
 ```
 
-A new unit regression test was then added:
+Breakdown:
+
+- unit: 81 passed;
+- contract: 1 passed;
+- integration: 4 passed;
+- PostgreSQL concurrency: 2 passed.
+
+Additional gates:
+
+- config fixture validation: PASS;
+- expected-invalid production template validation: PASS, with `Configuration invalid as expected`;
+- safe fixture E2E: PASS;
+- pip-audit: PASS, no known vulnerabilities found;
+- Docker Compose config validation: PASS for `compose.yml` and `compose.ci.yml`;
+- Docker exact-image smoke: PASS;
+- local image-ID invariant check: PASS.
+
+Warnings observed:
+
+- existing FastAPI/Starlette `httpx2` deprecation warning in unit tests;
+- Docker/Compose warning reading `C:\Users\Administrator\.docker\config.json`, but Compose config
+  validation succeeded.
+
+## 8. PostgreSQL Concurrency
+
+PASS.
+
+Executed with a disposable local `postgres:16-alpine` container and:
 
 ```text
-test_image_release_is_driven_by_tag_file
-```
-
-The first hosted run of that test caught remaining legacy `CI_COMMIT_TAG` references in `.gitlab/ci/image.yml`, proving the gate worked as intended.
-
-The GitLab image definition was then required to be made fully TAG-driven. Run the hosted quality pipeline once more after the final YAML correction to record the final hosted result.
-
-### Contract
-
-PASS:
-
-```text
-1 contract test
-```
-
-### Non-PostgreSQL integration
-
-PASS:
-
-```text
-4 integration workflow tests
-```
-
-### PostgreSQL concurrency
-
-VERIFIED LOCALLY with a disposable PostgreSQL 16 Docker container.
-
-Required test-only env:
-
-```text
-WEEKEND_REPORT_TEST_POSTGRES_URL
 WEEKEND_REPORT_TEST_POSTGRES_DISPOSABLE=1
 ```
 
-This is no longer considered an unverified local capability.
+Validated:
 
-### Safe E2E
+- duplicate active run prevention is atomic;
+- only one worker can claim a created run.
 
-PASS:
+The disposable PostgreSQL container was removed after the test.
 
-```text
-create -> claim -> execute -> evidence -> review -> notes -> approve -> snapshot -> final PDF
-```
+## 9. Docker Results
 
-### Dependency audit
-
-PASS at time tested:
+Image build:
 
 ```text
-No known vulnerabilities found
+PASS: docker build --no-cache -t weekend-report:python314 .
 ```
 
-### Compose validation
-
-PASS for:
+Final image ID:
 
 ```text
-deploy/docker/compose.yml
-deploy/docker/compose.ci.yml
+sha256:f122b1d4688b902e41a73581fb7b0bd6b9ec725e82df0a564442ddaebb61fe58
 ```
 
-## 9. Docker / Image Verification
-
-PASS:
-
-```powershell
-docker build --no-cache -t weekend-report:python314 .
-```
-
-Observed image:
+Python inside image:
 
 ```text
-sha256:263f4c07558118fb4c5b5098fd4428e643682c8a66dabcb7f1b21397b1212809
+PASS: Python 3.14.7
 ```
 
-PASS:
-
-```powershell
-docker run --rm weekend-report:python314 python --version
-```
-
-Observed:
+Exact-image smoke:
 
 ```text
-Python 3.14.7
+PASS: python scripts\ci.py image-smoke --image weekend-report:python314
 ```
 
-PASS:
+Verified:
 
-```powershell
-python scripts/ci.py image-smoke --image weekend-report:python314
-```
-
-Observed:
-
-- disposable PostgreSQL healthy;
-- web started;
-- worker started;
+- PostgreSQL healthy;
+- web running;
+- worker running;
 - `/healthz` returned OK;
-- database schema initialized;
-- exact-image smoke passed;
-- containers/volumes/networks removed successfully.
+- migration/database access succeeded;
+- disposable containers, volumes, and networks were removed.
 
-## 10. Docker Build-Context Improvement
-
-An earlier Docker build transferred roughly 153 MB of context.
-
-After ignore/cleanup changes, the later Python 3.14 build transferred roughly:
+Image-ID invariant:
 
 ```text
-630.89 kB
+PASS
+weekend-report:python314
+weekend-report:ci-6b731139296c
+weekend-report:v1.0.1
 ```
 
-This confirms `.dockerignore`/project cleanup significantly reduced build context.
-
-## 11. GitHub Actions Status
-
-A hosted GitHub Actions quality run reached green after the Python 3.14/Ruff/Mypy/dependency corrections.
-
-The image workflow did not run on a normal commit, which exposed that the desired release policy was not Git-tag-driven.
-
-The design was then corrected to:
+all pointed to:
 
 ```text
-normal commit -> quality only
-TAG change -> gated image delivery
+sha256:f122b1d4688b902e41a73581fb7b0bd6b9ec725e82df0a564442ddaebb61fe58
 ```
 
-The first hosted pre-image run after adding the TAG-only regression test failed intentionally because `.gitlab/ci/image.yml` still contained `CI_COMMIT_TAG`.
+Image cleanup:
 
-That defect is a CI-definition consistency issue, not an application failure.
+- removed temporary `weekend-report:python314`;
+- removed temporary `weekend-report:ci-6b731139296c`;
+- removed temporary `weekend-report:v1.0.1`;
+- no validation containers, volumes, or networks remained.
 
-Final required hosted verification after correcting `.gitlab/ci/image.yml`:
+Pre-existing local images `weekend-report:ui-validation`, `weekend-report:local`, and
+`weekend-report:validation` were not removed.
+
+## 10. Security / Static Checks
+
+Ruff:
 
 ```text
-test_image_release_is_driven_by_tag_file ... ok
+PASS: All checks passed
 ```
 
-and then the TAG-driven image workflow should be tested with an intentional `TAG` change.
-
-## 12. GitLab Status
-
-GitLab CI definitions are present and designed to use:
+Mypy:
 
 ```text
-default branch + rules:changes: TAG
+PASS: Success: no issues found in 95 source files
 ```
 
-The release version must come from the file content.
+pip-audit:
 
-Actual GitLab Runner execution is still pending future GitLab import/use.
+```text
+PASS: No known vulnerabilities found
+```
 
-## 13. Remaining Controlled Production Inputs
+Bandit:
 
-Still required locally/organizationally:
+```text
+NOT ADDED AS A RELEASE GATE
+```
 
-- site definitions;
-- manager-approved rules/approval policy;
-- Portainer real values;
-- RabbitMQ real values;
-- Recording contracts/approval;
-- database adapter binding;
-- infrastructure inventory/SSH policy;
-- DOCTOR mode/contract;
-- Splunk dashboard definitions;
-- production authentication source;
-- reviewer authorization;
-- evidence retention/backups;
-- distribution/archive policy.
+`bandit==1.8.6` is installed in `requirements.txt`, but it crashes internally under Python 3.14
+with `AttributeError: module 'ast' has no attribute 'Num'`. Adding it to the shared release gates
+now would create a broken blocker unrelated to project findings.
 
-See `docs/ENVIRONMENT_INPUTS_REQUIRED.md`.
+## 11. Documentation
 
-## 14. Known Non-Blocking Maintenance
+Synchronized documents:
 
-Unit tests emit a Starlette/FastAPI TestClient deprecation warning concerning the future `httpx2` transition.
+```text
+README.md
+deploy/docker/README.md
+docs/ARCHITECTURE.md
+docs/CI_CD.md
+docs/CONFIGURATION_GUIDE.md
+docs/DOCUMENTATION_INDEX.md
+docs/ENVIRONMENT_INPUTS_REQUIRED.md
+docs/PORTABLE_DEPLOYMENT.md
+docs/PROJECT_BUILD_REPORT.md
+docs/RECOVERY_POLICY.md
+docs/VALIDATION_CATALOG.md
+```
 
-It is currently a warning, not a failing gate.
+The documentation now consistently states:
 
-Do not change working FastAPI/Starlette/httpx dependencies solely to silence it without a deliberate compatibility upgrade/test pass.
+- Python 3.14;
+- root `TAG` is the release trigger/version source;
+- normal source changes run quality gates only;
+- `TAG` changes build and smoke the exact CI image;
+- the same smoked image is version-tagged before export/publish;
+- `docker load` produces `weekend-report:<TAG>`;
+- production Compose uses `WEEKEND_REPORT_IMAGE`.
 
-## 15. Current Readiness
+## 12. Remaining Recommendations
 
-### Core application framework
+- Revisit Ruff target policy. `pyproject.toml` still has `target-version = "py311"` while Mypy
+  and runtime are Python 3.14. No local document clearly states whether syntax compatibility
+  should remain Python 3.11 or become Python 3.14-only.
+- Separate runtime and development/CI dependencies in a future Docker optimization. The current
+  image intentionally keeps test/quality tools because exact-image smoke depends on the current
+  project layout.
+- Recheck Bandit when a Python 3.14-compatible Bandit release/configuration is approved.
+- Track the Starlette/FastAPI `httpx2` warning as a future dependency-compatibility upgrade.
 
-READY for controlled real-environment configuration.
+## 13. Owner Decisions Still Required
 
-### Python 3.14
+Remaining controlled placeholders in deploy/config templates:
 
-VERIFIED locally and in Docker.
+```text
+<TBD>: 236
+<TO_VERIFY>: 11
+```
 
-### Docker image runtime
+Files still containing unresolved production inputs:
 
-VERIFIED locally.
+```text
+config/database.yml
+config/doctor.yml
+config/portainer_expected.yml
+config/rabbitmq_expected.yml
+config/recording.yml
+config/rules.yml
+config/servers.yml
+config/sites.yml
+config/splunk_dashboards.yml
+.env.example
+deploy/docker/env.example
+```
 
-### PostgreSQL concurrency
+Information still needed:
 
-VERIFIED locally with disposable PostgreSQL.
+- production site IDs/display names/purposes;
+- manager-approved rules, aggregation, approval, note, parity, and recovery policy;
+- production auth provider and authorized reviewers;
+- non-committed runtime secret mechanism and real values;
+- Portainer URLs/auth/API contract/endpoint IDs/service expectations;
+- RabbitMQ URLs/auth/topology/thresholds;
+- Recording WebApp/backend/device selection/start/stop/cleanup/recovery contracts;
+- approved database sync-function adapter contract;
+- infrastructure server inventory/SSH/host-key/filesystem/NFS/Chrony expectations;
+- DOCTOR manual/API mode and semantics;
+- Splunk dashboard IDs/names/URLs/note requirements;
+- production evidence retention, backup, archive, and distribution policy;
+- GitLab Runner/DinD or equivalent execution details before relying on GitLab.
 
-### GitHub quality pipeline
+No real production integrations were enabled or contacted.
 
-VERIFIED before the final TAG-trigger consistency edit; rerun required after the final GitLab YAML TAG-only correction.
+## 14. Final Verdict
 
-### GitHub TAG-driven image pipeline
+Core project ready?
 
-IMPLEMENTED DESIGN; must be exercised with an intentional TAG change after the final pre-image pipeline is green.
+```text
+YES, ready for owner-supplied production configuration.
+```
 
-### GitLab pipeline
+Normal CI ready?
 
-DEFINED / NOT YET RUN ON A REAL GITLAB RUNNER.
+```text
+YES, local shared gates are passing.
+```
 
-### Production integrations
+TAG release workflow ready?
 
-NOT YET ENABLED.
+```text
+YES, local CI definitions and regression tests enforce TAG-file-driven exact-image delivery.
+Hosted GitHub/GitLab execution still needs to be run by the owner after review.
+```
 
-## 16. Next Engineering Step
+Offline image ready?
 
-After the CI release-trigger correction is green:
+```text
+YES, final Docker build/smoke passed and the versioned-image invariant was verified locally.
+No release artifact was exported because this was not a real release.
+```
 
-1. preserve the current core baseline;
-2. obtain manager-approved global policy;
-3. fill private site definitions locally;
-4. begin Portainer as the first live read-only integration;
-5. keep all secrets outside YAML/source control.
+GitLab ready for later import?
+
+```text
+YES, definitions are present and cleaned of Git-tag release behavior.
+Actual GitLab Runner execution is still pending.
+```
+
+Production integrations ready?
+
+```text
+NO, by design. They remain blocked until real approved configuration and secrets are supplied.
+```

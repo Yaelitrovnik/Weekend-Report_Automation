@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 ## 1. Configuration Principles
 
@@ -84,18 +84,6 @@ If using the implemented `trusted_header` provider, also configure:
 ```text
 WEEKEND_REPORT_AUTH_TRUSTED_HEADER
 ```
-
-If using the implemented `oidc` provider, also configure:
-
-```text
-WEEKEND_REPORT_AUTH_OIDC_ISSUER
-WEEKEND_REPORT_AUTH_OIDC_AUDIENCE
-WEEKEND_REPORT_AUTH_OIDC_JWKS_URL
-WEEKEND_REPORT_AUTH_OIDC_REVIEWER_CLAIM   (optional; defaults to "email")
-```
-
-OIDC tokens are verified against the issuer's published JWKS. Only RS256
-(asymmetric) signatures are accepted.
 
 Use trusted-header authentication only behind an approved reverse-proxy/authentication boundary.
 
@@ -292,12 +280,17 @@ as credentials or runtime identity.
 
 At minimum, production requires real:
 
+- verified application image selector through `WEEKEND_REPORT_IMAGE`;
 - PostgreSQL secret;
 - app version;
 - build ID;
 - auth configuration;
 - CSRF signing secret;
 - integration secrets for enabled live modules.
+
+For a verified release, set `WEEKEND_REPORT_IMAGE` to the loaded release tag, for example
+`weekend-report:v1.0.1`. Do not run production Compose with literal controlled placeholders as
+runtime values.
 
 ## 16. CI Configuration Is Not Production Configuration
 

@@ -119,7 +119,6 @@ class RunRecord:
     final_snapshot_path: str | None = None
     final_pdf_path: str | None = None
     final_pdf_checksum: str | None = None
-    failure_context: str | None = None
 
 
 @dataclass(slots=True)

@@ -1,6 +1,6 @@
 # CI/CD and Verified Image Delivery
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 ## 1. Purpose
 
@@ -25,6 +25,7 @@ Local Python:        3.14
 GitHub Actions:      3.14
 GitLab quality jobs: 3.14
 Application image:   python:3.14-slim-bookworm
+Base digest:         sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
 Validated runtime:   Python 3.14.7
 PostgreSQL CI:       postgres:16-alpine
 ```
@@ -99,6 +100,9 @@ pre-image quality gates run again
             `--> success
                     |
                     v
+        TAG SAME IMAGE AS weekend-report:<TAG>
+                    |
+                    v
         EXPORT VERIFIED ARCHIVE + SHA-256
                     |
                     `--> optional registry push
@@ -141,6 +145,7 @@ Release version usage:
 TAG value       v1.0.1
 OCI version     v1.0.1
 registry tag    :v1.0.1
+local image      weekend-report:v1.0.1
 archive prefix  weekend-report_v1.0.1_
 ```
 
@@ -332,7 +337,8 @@ on:
       - TAG
 ```
 
-If the project uses a different release branch, keep the actual workflow branch name authoritative.
+The local repository metadata currently verifies `origin/main` as the default branch, so the
+GitHub image workflow uses `main`.
 
 The workflow reads the version from:
 
@@ -366,7 +372,13 @@ record image ID
 exact-image smoke
    |
    v
-docker save archive
+docker tag same image as weekend-report:<TAG>
+   |
+   v
+verify CI tag and release tag have the same image ID
+   |
+   v
+docker save weekend-report:<TAG> archive
    |
    v
 SHA-256
@@ -469,6 +481,7 @@ After smoke success:
 weekend-report_<TAG-version>_<short-sha>.tar.gz
 weekend-report_<TAG-version>_<short-sha>.tar.gz.sha256
 image-id.txt
+release-image-id.txt
 ```
 
 Example:
@@ -492,6 +505,12 @@ docker load -i .\weekend-report_v1.0.1_<short-sha>.tar.gz
 ```
 
 If the local Docker version requires decompression first, decompress to `.tar` then load.
+
+After load, the image tag available for deployment is:
+
+```text
+weekend-report:v1.0.1
+```
 
 ## 13. Release Procedure
 
@@ -569,6 +588,8 @@ CI uses fixture configuration and disposable infrastructure only.
 - quality gates remain separately visible;
 - image build depends on pre-image gates;
 - exact image is smoked before export/publish;
+- the smoke-tested CI tag is version-tagged before export/publish;
+- exported archives use the versioned `weekend-report:<TAG>` image;
 - CI files do not contain known production integration secrets;
 - `compose.ci.yml` uses an exact image and contains no `build:`;
 - release image is driven by the `TAG` file;
@@ -613,7 +634,7 @@ Verified locally during the Python 3.14 migration:
 - safe fixture E2E;
 - dependency audit with no known vulnerabilities at the time tested;
 - Docker Compose validation;
-- Docker build using `python:3.14-slim-bookworm`;
+- Docker build using `python:3.14-slim-bookworm` with the locally verified pinned digest;
 - container runtime `Python 3.14.7`;
 - exact-image smoke with PostgreSQL, web, worker, `/healthz`, and migration.
 

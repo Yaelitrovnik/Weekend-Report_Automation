@@ -1,6 +1,6 @@
 # Docker Deployment
 
-`compose.yml` defines web, worker, and PostgreSQL. The same `weekend-report:local` image is used by web and worker. PostgreSQL is only attached to the backend network and is not exposed publicly.
+`compose.yml` defines web, worker, and PostgreSQL. The same image is used by web and worker through `WEEKEND_REPORT_IMAGE`, defaulting to `weekend-report:local` for local development. PostgreSQL is only attached to the backend network and is not exposed publicly.
 
 The checked-in `env.example` is a template only. Do not pass it to Compose as a runtime
 `env_file`. Create a non-committed `deploy/docker/.env`, use Docker secrets, or use an
@@ -10,6 +10,16 @@ Required runtime values include at least `POSTGRES_PASSWORD`, `WEEKEND_REPORT_AP
 `WEEKEND_REPORT_BUILD_ID`, configured production auth provider values, authorized reviewers,
 and `WEEKEND_REPORT_CSRF_SIGNING_KEY`. The application fails clearly when production
 traceability, auth, or mutation protection is incomplete.
+
+For a verified offline release, load the CI artifact and set:
+
+```text
+WEEKEND_REPORT_IMAGE=weekend-report:v1.0.1
+WEEKEND_REPORT_APP_VERSION=v1.0.1
+WEEKEND_REPORT_BUILD_ID=<actual-build-id>
+```
+
+Do not invent the production build ID.
 
 Portainer runtime variables such as `PORTAINER_SITE1_URL`, `PORTAINER_SITE1_TOKEN`,
 `PORTAINER_SITE1_CA_FILE`, `PORTAINER_SITE2_URL`, `PORTAINER_SITE2_TOKEN`, and
