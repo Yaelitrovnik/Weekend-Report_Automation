@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 ## 1. Configuration Principles
 
@@ -51,7 +51,7 @@ is the software-release/image-version source for CI image creation.
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 The release pipeline preserves the `v`.
@@ -280,12 +280,17 @@ as credentials or runtime identity.
 
 At minimum, production requires real:
 
+- verified application image selector through `WEEKEND_REPORT_IMAGE`;
 - PostgreSQL secret;
 - app version;
 - build ID;
 - auth configuration;
 - CSRF signing secret;
 - integration secrets for enabled live modules.
+
+For a verified release, set `WEEKEND_REPORT_IMAGE` to the loaded release tag, for example
+`weekend-report:v1.0.2`. Do not run production Compose with literal controlled placeholders as
+runtime values.
 
 ## 16. CI Configuration Is Not Production Configuration
 

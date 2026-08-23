@@ -1,6 +1,6 @@
 # Architecture
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 ## 1. System Purpose
 
@@ -57,7 +57,7 @@ Current Python baseline:
 
 ```text
 Python 3.14
-Docker base: python:3.14-slim-bookworm
+Docker base: python:3.14-slim-bookworm pinned by digest
 ```
 
 ## 3. Runtime Security Boundary
@@ -309,7 +309,7 @@ Release-image versioning uses the root `TAG` file.
 Example:
 
 ```text
-TAG = v1.0.1
+TAG = v1.0.2
 ```
 
 The `v` prefix is preserved.
@@ -345,6 +345,7 @@ TAG changed on release/default branch
   -> all pass
   -> build exact image
   -> smoke exact image
+  -> tag same image as weekend-report:<TAG>
   -> export archive + SHA-256
   -> optional registry publication
 ```

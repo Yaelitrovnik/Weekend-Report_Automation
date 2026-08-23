@@ -1,6 +1,6 @@
 # Weekend Report Automation
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 Weekend Report Automation is a manually triggered operational-validation application built with Python 3.14, FastAPI, a persistent worker, PostgreSQL, filesystem evidence storage, HTML review pages, immutable review snapshots, and one final PDF generated only after explicit human confirmation.
 
@@ -65,7 +65,7 @@ Python 3.14
 Current validated Docker runtime:
 
 ```text
-python:3.14-slim-bookworm
+python:3.14-slim-bookworm pinned by digest
 Python 3.14.7
 ```
 
@@ -170,7 +170,7 @@ TAG
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 Changing `TAG` on the configured default branch triggers the image-delivery path.
@@ -191,6 +191,9 @@ build exact image
 smoke exact image
     |
     v
+tag same image as weekend-report:<TAG>
+    |
+    v
 export verified image + SHA-256
     |
     `--> optional registry publication
@@ -201,10 +204,16 @@ A Git tag is **not** required to trigger image creation.
 The `v` prefix is preserved everywhere:
 
 ```text
-TAG:            v1.0.1
-image version:  v1.0.1
-registry tag:   :v1.0.1
-archive:        weekend-report_v1.0.1_<short-sha>.tar.gz
+TAG:            v1.0.2
+image version:  v1.0.2
+registry tag:   :v1.0.
+archive:        weekend-report_v1.0.2_<short-sha>.tar.gz
+```
+
+The generated archive must load as:
+
+```text
+weekend-report:v1.0.2
 ```
 
 Key delivery files:
@@ -227,6 +236,9 @@ GitHub Actions is usable now. GitLab CI/CD remains ready for later import/use on
 ## Configuration
 
 Secrets belong in a non-committed `.env`, Docker secrets, or another approved secret mechanism.
+Production Compose selects the already-built or loaded image with `WEEKEND_REPORT_IMAGE`.
+For local development this can remain `weekend-report:local`; for a verified release it should
+point at a loaded versioned image such as `weekend-report:v1.0.2`.
 
 Do not put credentials in YAML, fixtures, documentation, image layers, or CI artifacts.
 

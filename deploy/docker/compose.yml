@@ -20,9 +20,7 @@ services:
         max-file: "5"
 
   web:
-    build:
-      context: ../..
-    image: weekend-report:local
+    image: ${WEEKEND_REPORT_IMAGE:-weekend-report:local}
     command: ["uvicorn", "app.web.main:app", "--host", "0.0.0.0", "--port", "8080"]
     environment: &app_environment
       WEEKEND_REPORT_APP_VERSION: ${WEEKEND_REPORT_APP_VERSION:?WEEKEND_REPORT_APP_VERSION is required for portable traceability}
@@ -54,7 +52,7 @@ services:
     logging: *default_logging
 
   worker:
-    image: weekend-report:local
+    image: ${WEEKEND_REPORT_IMAGE:-weekend-report:local}
     command: ["python", "-m", "app.worker.main"]
     environment: *app_environment
     volumes:

@@ -43,18 +43,20 @@ jobs:
           version="$(tr -d '\r\n' < TAG)"
 
           if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "TAG must contain a semantic version such as v1.0.1" >&2
+            echo "TAG must contain a semantic version such as v1.0.2" >&2
             exit 1
           fi
 
           build_id="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           image_tag="weekend-report:ci-${short_sha}"
+          release_image_tag="weekend-report:${version}"
           archive_base="weekend-report_${version}_${short_sha}"
 
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "build_id=${build_id}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${image_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_image_tag=${release_image_tag}" >> "$GITHUB_OUTPUT"
           echo "archive_base=${archive_base}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
@@ -87,15 +89,31 @@ jobs:
           WEEKEND_REPORT_BUILD_ID: ${{ steps.identity.outputs.build_id }}
         run: python scripts/ci.py image-smoke --image "${{ steps.identity.outputs.image_tag }}"
 
+      - name: Version-tag the exact smoked image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag "${{ steps.identity.outputs.image_tag }}" "${{ steps.identity.outputs.release_image_tag }}"
+          release_id="$(docker image inspect --format '{{.Id}}' "${{ steps.identity.outputs.release_image_tag }}")"
+          build_id="$(cat image-id.txt)"
+          if [[ "${release_id}" != "${build_id}" ]]; then
+            echo "Release tag does not point to the exact smoked image" >&2
+            echo "build=${build_id}" >&2
+            echo "release=${release_id}" >&2
+            exit 1
+          fi
+          printf '%s\n' "${release_id}" > release-image-id.txt
+
       - name: Export verified offline image artifact
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           archive="dist/${{ steps.identity.outputs.archive_base }}.tar.gz"
-          docker save "${{ steps.identity.outputs.image_tag }}" | gzip -1 > "$archive"
+          docker save "${{ steps.identity.outputs.release_image_tag }}" | gzip -1 > "$archive"
           (cd dist && sha256sum "${{ steps.identity.outputs.archive_base }}.tar.gz" > "${{ steps.identity.outputs.archive_base }}.tar.gz.sha256")
           cp image-id.txt dist/image-id.txt
+          cp release-image-id.txt dist/release-image-id.txt
 
       - name: Upload verified image artifact
         uses: actions/upload-artifact@v6
@@ -136,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           repo="ghcr.io/${GITHUB_REPOSITORY,,}"
-          local_image="${{ steps.identity.outputs.image_tag }}"
+          local_image="${{ steps.identity.outputs.release_image_tag }}"
           sha_tag="${repo}:sha-${{ steps.identity.outputs.short_sha }}"
           docker tag "$local_image" "$sha_tag"
           docker push "$sha_tag"

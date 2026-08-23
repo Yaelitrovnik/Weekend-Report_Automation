@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import timedelta
+from pathlib import Path
 
 from app.database.repository import Repository
 from app.domain import CheckStatus, RunState
@@ -64,6 +65,27 @@ class PostgreSQLLockSqlTests(unittest.TestCase):
         repo.backend = "postgres"
         self.assertIn("FOR UPDATE", repo._run_lock_sql())
         self.assertIn("FOR UPDATE SKIP LOCKED", repo._claim_candidate_sql())
+
+
+class RecoveryPolicyDocTests(unittest.TestCase):
+    def test_recovery_policy_covers_required_operational_controls(self):
+        text = Path("docs/RECOVERY_POLICY.md").read_text(encoding="utf-8")
+        for required in (
+            "Stale-Worker Definition",
+            "Heartbeat Timeout",
+            "Non-Recording Stale-Run Behavior",
+            "Recording Stale-Run Behavior",
+            "`RECOVERY_REQUIRED`",
+            "No Automatic Replay",
+            "Human Cleanup / Recovery Procedure",
+            "Recovery Evidence Requirements",
+            "Explicit Recovery Resolution",
+            "Blocking Of New Runs Until Resolution",
+            "CI/CD Boundary",
+            "Production-Owner Approval Requirements",
+        ):
+            self.assertIn(required, text)
+        self.assertIn("must never automatically replay", text)
 
 
 if __name__ == "__main__":

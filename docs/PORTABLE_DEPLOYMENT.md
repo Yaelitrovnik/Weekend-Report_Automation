@@ -1,6 +1,6 @@
 # Portable Deployment
 
-**Documentation synchronized:** 2026-08-19
+**Documentation synchronized:** 2026-08-23
 
 The project is portable as a complete `weekend-report` folder and/or as a verified Docker image artifact produced by CI.
 
@@ -58,7 +58,7 @@ If local validation scripts are also run on the target PC, use Python 3.14.
 ```text
 Application Python: 3.14
 Validated container: Python 3.14.7
-Base image: python:3.14-slim-bookworm
+Base image: python:3.14-slim-bookworm pinned by digest
 PostgreSQL: 16-alpine
 ```
 
@@ -115,7 +115,7 @@ Root `TAG` is part of the project and must be transferred.
 Example:
 
 ```text
-v1.0.1
+v1.0.2
 ```
 
 It is:
@@ -136,6 +136,7 @@ TAG change
   -> pre-image gates PASS
   -> build
   -> exact-image smoke PASS
+  -> tag same image as weekend-report:<TAG>
   -> docker save archive
   -> SHA-256
   -> external hard disk
@@ -150,27 +151,34 @@ Expected artifacts:
 weekend-report_<version>_<short-sha>.tar.gz
 weekend-report_<version>_<short-sha>.tar.gz.sha256
 image-id.txt
+release-image-id.txt
 ```
 
 Example:
 
 ```text
-weekend-report_v1.0.1_abc123def456.tar.gz
+weekend-report_v1.0.2_abc123def456.tar.gz
 ```
 
 Verify:
 
 ```powershell
-Get-FileHash .\weekend-report_v1.0.1_<short-sha>.tar.gz -Algorithm SHA256
+Get-FileHash .\weekend-report_v1.0.2_<short-sha>.tar.gz -Algorithm SHA256
 ```
 
 Then load:
 
 ```powershell
-docker load -i .\weekend-report_v1.0.1_<short-sha>.tar.gz
+docker load -i .\weekend-report_v1.0.2_<short-sha>.tar.gz
 ```
 
 If the target Docker version requires an uncompressed TAR, decompress first.
+
+After load, the expected local image tag is:
+
+```text
+weekend-report:v1.0.2
+```
 
 ## 7. Alternative: Build on Target PC
 
@@ -195,6 +203,7 @@ Create real secrets separately:
 Production values include:
 
 ```text
+WEEKEND_REPORT_IMAGE
 POSTGRES_PASSWORD
 WEEKEND_REPORT_APP_VERSION
 WEEKEND_REPORT_BUILD_ID
@@ -205,7 +214,7 @@ WEEKEND_REPORT_CSRF_SIGNING_KEY
 integration-specific credentials
 ```
 
-If a CI-built image uses `TAG=v1.0.1`, production `WEEKEND_REPORT_APP_VERSION` should correspond to that software version unless there is a documented packaging policy that says otherwise.
+If a CI-built image uses `TAG=v1.0.2`, production `WEEKEND_REPORT_APP_VERSION` should correspond to that software version unless there is a documented packaging policy that says otherwise.
 
 ## 9. Production Configuration
 
@@ -234,6 +243,10 @@ Start:
 ```powershell
 docker compose -f deploy/docker/compose.yml up -d
 ```
+
+`deploy/docker/compose.yml` uses `${WEEKEND_REPORT_IMAGE:-weekend-report:local}` for both web
+and worker. For release deployment, set `WEEKEND_REPORT_IMAGE` to the verified loaded tag such as
+`weekend-report:v1.0.2`.
 
 Confirm:
 
