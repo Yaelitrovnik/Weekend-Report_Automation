@@ -99,7 +99,7 @@ class CIConfigTests(unittest.TestCase):
         self.assertIn("- TAG", github_text)
         self.assertIn("< TAG", github_text)
         self.assertIn("branches:", github_text)
-        self.assertIn("- main", github_text)
+        self.assertIn("- master", github_text)
         self.assertNotIn("GITHUB_REF_NAME", github_text)
         self.assertNotIn("refs/tags/", github_text)
 
