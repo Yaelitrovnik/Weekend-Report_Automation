@@ -5,21 +5,20 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from app.api.dependencies import get_evidence_manager, get_repository, get_reviewer
+from app.api.dependencies import get_evidence_manager, get_repository
 
 router = APIRouter()
 RepoDep = Annotated[Any, Depends(get_repository)]
 EvidenceDep = Annotated[Any, Depends(get_evidence_manager)]
-ReviewerDep = Annotated[str, Depends(get_reviewer)]
 
 
 @router.get("/api/runs/{run_id}/evidence")
-def list_evidence(run_id: str, repo: RepoDep, reviewer: ReviewerDep):
+def list_evidence(run_id: str, repo: RepoDep):
     return repo.list_evidence(run_id)
 
 
 @router.get("/api/evidence/{path:path}")
-def get_evidence(path: str, repo: RepoDep, evidence: EvidenceDep, reviewer: ReviewerDep):
+def get_evidence(path: str, repo: RepoDep, evidence: EvidenceDep):
     try:
         record = repo.get_evidence_by_path(path)
     except KeyError as exc:

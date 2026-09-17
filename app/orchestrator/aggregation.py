@@ -24,6 +24,7 @@ def aggregate_status(
     results: list[CheckResult],
     config: dict[str, Any] | None = None,
 ) -> CheckStatus:
+    results = _aggregation_results(results)
     if config is None:
         return _aggregate_by_strength(results)
     if not results:
@@ -50,6 +51,12 @@ def aggregate_status(
         fallback = _warning_status(policy)
         return fallback if fallback != CheckStatus.PASS else CheckStatus.WARNING
     return CheckStatus.PASS
+
+
+def _aggregation_results(results: list[CheckResult]) -> list[CheckResult]:
+    if not _has_doctor_reviewable_module_status(results):
+        return results
+    return [result for result in results if not _is_reviewable_doctor_health_error(result)]
 
 
 def site_summaries(
@@ -87,6 +94,26 @@ def _aggregate_by_strength(results: list[CheckResult]) -> CheckStatus:
     if not results:
         return CheckStatus.SKIPPED
     return max((result.status for result in results), key=lambda status: STATUS_STRENGTH[status])
+
+
+def _has_doctor_reviewable_module_status(results: list[CheckResult]) -> bool:
+    return any(
+        result.module == "doctor"
+        and result.check_id == "doctor.module_status"
+        and result.status == CheckStatus.MANUAL_REVIEW
+        and result.metadata.get("doctor_manual_review_path") is True
+        for result in results
+    )
+
+
+def _is_reviewable_doctor_health_error(result: CheckResult) -> bool:
+    return (
+        result.module == "doctor"
+        and result.check_id == "doctor.service.health"
+        and result.status == CheckStatus.ERROR
+        and result.metadata.get("doctor_error_type") == "health_issue"
+        and result.metadata.get("reviewable_health_issue") is True
+    )
 
 
 def _aggregation_policy(config: dict[str, Any]) -> dict[str, Any]:

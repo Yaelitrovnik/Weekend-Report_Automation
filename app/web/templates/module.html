@@ -96,6 +96,50 @@
   </div>
 </section>
 
+{% elif module == "doctor" and doctor_services %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">DOCTOR API</p>
+      <h2>Expected Services</h2>
+    </div>
+  </div>
+  <div class="service-stack">
+    {% for service in doctor_services %}
+      <article class="service-comparison status-left status-left-{{ service.status|lower|replace('_', '-') }}">
+        <div class="service-header">
+          <div>
+            <p class="eyebrow">Service</p>
+            <h3>{{ service.service }}</h3>
+          </div>
+          {{ ui.status_badge(service.status) }}
+        </div>
+        <div class="comparison-grid">
+          {% for site in service.site_rows %}
+            <div class="comparison-site">
+              <div class="comparison-site-heading">
+                <strong>{{ site.label }}</strong>
+                {{ ui.status_badge(site.status) }}
+              </div>
+              <dl class="service-metrics">
+                <div class="wide-metric"><dt>Reason</dt><dd>{{ site.reason }}</dd></div>
+              </dl>
+              <details class="technical-details">
+                <summary>Service health details</summary>
+                <div class="result-stack">
+                  {% for result in site.checks %}
+                    {{ ui.result_card(result, run.run_id, true) }}
+                  {% endfor %}
+                </div>
+              </details>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
 {% elif module == "rabbitmq" and rabbitmq_sections %}
 <section class="section-stack">
   {% for section in rabbitmq_sections %}

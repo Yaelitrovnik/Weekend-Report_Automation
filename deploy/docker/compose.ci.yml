@@ -20,13 +20,10 @@ services:
     environment: &ci_app_environment
       WEEKEND_REPORT_APP_VERSION: ${WEEKEND_REPORT_APP_VERSION:-ci-image}
       WEEKEND_REPORT_BUILD_ID: ${WEEKEND_REPORT_BUILD_ID:-ci-image-smoke}
-      WEEKEND_REPORT_CONFIG_DIR: /app/tests/fixtures/config_valid
+      WEEKEND_REPORT_CONFIG_DIR: /app/config
       WEEKEND_REPORT_EVIDENCE_ROOT: /app/runs
       WEEKEND_REPORT_DATABASE_URL: postgresql://weekend_report:${POSTGRES_PASSWORD}@postgres:5432/weekend_report_ci
-      WEEKEND_REPORT_AUTH_MODE: development
       WEEKEND_REPORT_WORKER_POLL_SECONDS: "0.5"
-    ports:
-      - "127.0.0.1:${WEEKEND_REPORT_CI_PORT:-18080}:8080"
     volumes:
       - evidence:/app/runs
     depends_on:

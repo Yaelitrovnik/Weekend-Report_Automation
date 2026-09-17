@@ -418,8 +418,8 @@ Files:
 
 ```text
 .gitlab-ci.yml
-.gitlab/ci/quality.yml
-.gitlab/ci/image.yml
+.gitlab-ci-cd/quality.yml
+.gitlab-ci-cd/image.yml
 ```
 
 GitLab is currently maintained as a future-ready delivery path for later import/use.
@@ -609,7 +609,7 @@ Mypy FAIL
 
 Unit regression detects stale CI_COMMIT_TAG
   -> image NOT STARTED
-  -> fix .gitlab/ci/image.yml
+  -> fix .gitlab-ci-cd/image.yml
 
 PostgreSQL concurrency FAIL
   -> image NOT STARTED

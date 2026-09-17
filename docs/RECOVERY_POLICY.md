@@ -47,7 +47,7 @@ automation_status=ERROR
 ```
 
 The Recording operation must be treated as uncertain until a human verifies the external
-Recording/WebApp/backend state and cleanup status.
+Recording Manager state, all four observation points, and cleanup status.
 
 ## 5. `RECOVERY_REQUIRED`
 
@@ -74,8 +74,10 @@ The operator must inspect the affected run page and identify:
 - last heartbeat timestamp;
 - available raw and normalized evidence;
 - selected existing Recording device if one was recorded;
-- WebApp count/status;
-- backend count/status;
+- Site 1 WebApp observation count/status;
+- Site 2 WebApp observation count/status;
+- Site 1 server observation count/status;
+- Site 2 server observation count/status;
 - configured operator instructions.
 
 The operator must verify whether the selected existing device is still recording, whether counts
@@ -88,7 +90,7 @@ cleanup is complete. Examples include:
 
 - dashboard or API observation references;
 - device state;
-- WebApp/backend counts;
+- all four configured observation counts;
 - cleanup timestamp;
 - reviewer/operator note.
 

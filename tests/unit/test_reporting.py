@@ -10,7 +10,7 @@ from app.reporting.final_pdf import render_final_pdf
 class ReportingTests(unittest.TestCase):
     def test_multi_page_pdf_contains_snapshot_sections(self):
         snapshot = {
-            "snapshot_version": 1,
+            "snapshot_version": 2,
             "created_at": "2026-08-11T00:00:00Z",
             "overall_status": "WARNING",
             "run": {
@@ -33,6 +33,29 @@ class ReportingTests(unittest.TestCase):
                 "reviewer": "alice",
                 "decision": "APPROVE",
                 "confirmed_at": "2026-08-11T00:01:00Z",
+            },
+            "manual_db_review": {
+                "id": 1,
+                "run_id": "WR-20260811-000000",
+                "display_name": (
+                    "Database Synchronization Check"
+                ),
+                "script_path": (
+                    "C:\\Scripts\\DatabaseSync\\"
+                    "database_sync_check.ps1"
+                ),
+                "execution_method": (
+                    "Performed locally by reviewer"
+                ),
+                "result": "PASS",
+                "comment": (
+                    "Database synchronization verified."
+                ),
+                "reviewer": "alice",
+                "reviewed_at": (
+                    "2026-08-11T00:00:30Z"
+                ),
+                "final_decision": "APPROVE",
             },
             "site_summaries": [{"site": "site1", "status": "PASS", "result_count": 60}],
             "module_summaries": [{"module": "portainer", "status": "WARNING", "result_count": 60}],
@@ -115,6 +138,20 @@ class ReportingTests(unittest.TestCase):
         self.assertIn(b"module note appears", data)
         self.assertIn(b"splunk note appears", data)
         self.assertIn(b"Evidence References", data)
+        self.assertIn(b"Manual Database Synchronization Check",data,)
+        self.assertIn(b"database_sync_check.ps1",data,)
+        self.assertIn(b"Execution method: "b"Performed locally by reviewer",data,)
+        self.assertIn(b"Result: PASS",data,)
+        self.assertIn(b"Reviewer: alice",data,)
+        self.assertIn(b"Reviewer Confirmation", data)
+        self.assertLess(
+            data.index(b"Evidence References"),
+            data.index(b"Reviewer Confirmation"),
+        )
+        self.assertNotIn(b"started_by:", data)
+        self.assertNotIn(b"author:", data)
+        self.assertIn(b"Timestamp: "b"2026-08-11T00:00:30Z",data,)
+        self.assertIn(b"Comment: "b"Database synchronization verified.",data,)
 
 
 if __name__ == "__main__":

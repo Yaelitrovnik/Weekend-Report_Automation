@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from app.domain import CheckResult, CheckStatus, NoteScope, ReviewDecision, ReviewNote
+from app.domain import (
+    CheckResult,
+    CheckStatus,
+    ManualDBReviewResult,
+    NoteScope,
+    ReviewDecision,
+    ReviewNote,
+)
 from app.orchestrator.execution_plan import build_execution_plan
 
 
@@ -19,15 +26,51 @@ def validate_finalization_readiness(
     run_id: str,
     decision: ReviewDecision,
 ) -> list[str]:
+    errors: list[str] = []
+
+    errors.extend(
+        _manual_db_review_errors(
+            repository,
+            config,
+            run_id,
+            decision,
+        )
+    )
+
     if decision == ReviewDecision.REJECT:
-        return _reject_errors(config)
+        errors.extend(_reject_errors(config))
+        return errors
+
     results = repository.list_results(run_id)
     notes = repository.list_notes(run_id)
-    errors: list[str] = []
-    errors.extend(_required_module_completion_errors(config, results))
-    errors.extend(_splunk_review_errors(config, notes))
-    errors.extend(_required_note_errors(config, results, notes))
-    errors.extend(_approval_status_policy_errors(config, results, notes))
+
+    errors.extend(
+        _required_module_completion_errors(
+            config,
+            results,
+        )
+    )
+    errors.extend(
+        _splunk_review_errors(
+            config,
+            notes,
+        )
+    )
+    errors.extend(
+        _required_note_errors(
+            config,
+            results,
+            notes,
+        )
+    )
+    errors.extend(
+        _approval_status_policy_errors(
+            config,
+            results,
+            notes,
+        )
+    )
+
     return errors
 
 
@@ -41,6 +84,73 @@ def enforce_finalization_readiness(
     if errors:
         raise FinalizationReadinessError(errors)
 
+def _manual_db_review_errors(
+    repository,
+    config: dict[str, Any],
+    run_id: str,
+    decision: ReviewDecision,
+) -> list[str]:
+    manual_config = config.get(
+        "manual_db_check",
+        {},
+    )
+
+    if not isinstance(manual_config, dict):
+        return []
+
+    if manual_config.get("enabled") is not True:
+        return []
+
+    if manual_config.get("required") is not True:
+        return []
+
+    review = repository.get_manual_db_review(
+        run_id
+    )
+
+    if review is None:
+        return [
+            "Manual Database Synchronization Check "
+            "must be completed before finalization."
+        ]
+
+    if not review.comment.strip():
+        return [
+            "Manual Database Synchronization Check "
+            "requires a non-empty comment before finalization."
+        ]
+
+    if decision == ReviewDecision.APPROVE:
+        if review.result != ManualDBReviewResult.PASS:
+            return [
+                "APPROVE requires Manual Database "
+                "Synchronization Check result PASS; "
+                f"current result is {review.result.value}."
+            ]
+
+        return []
+
+    if decision == ReviewDecision.REJECT:
+        if review.result == ManualDBReviewResult.PASS:
+            return [
+                "REJECT is not permitted when Manual Database "
+                "Synchronization Check result is PASS."
+            ]
+
+        if review.result in {
+            ManualDBReviewResult.FAIL,
+            ManualDBReviewResult.NOT_RUN,
+        }:
+            return []
+
+        return [
+            "REJECT requires Manual Database Synchronization "
+            "Check result FAIL or NOT RUN."
+        ]
+
+    return [
+        "Unsupported final review decision."
+    ]
 
 def _review_config(config: dict[str, Any]) -> dict[str, Any]:
     review = config.get("rules", {}).get("review", {})
@@ -83,7 +193,7 @@ def _splunk_review_errors(config: dict[str, Any], notes: list[ReviewNote]) -> li
         if not isinstance(dashboard_id, str):
             continue
         note = notes_by_dashboard.get(dashboard_id)
-        if dashboard.get("required_review") and note is None:
+        if dashboard.get("required_review") and not _dashboard_reviewed(note):
             errors.append(
                 f"Splunk dashboard {dashboard_id} must be reviewed and saved before APPROVE."
             )
@@ -152,10 +262,20 @@ def _approval_status_policy_errors(
     for status, grouped in _results_by_status(results).items():
         action = policy.get(status.value, "ALLOW")
         if action == "BLOCK":
-            errors.append(
-                f"APPROVE is blocked by configured policy for {status.value} "
-                f"({len(grouped)} result(s))."
-            )
+            blocked = [
+                result
+                for result in grouped
+                if not _reviewable_doctor_health_error_is_covered(
+                    result,
+                    results,
+                    notes_by_result,
+                )
+            ]
+            if blocked:
+                errors.append(
+                    f"APPROVE is blocked by configured policy for {status.value} "
+                    f"({len(blocked)} result(s))."
+                )
         elif action == "REQUIRE_NOTE":
             for result in grouped:
                 if not _has_text(notes_by_result.get(result.id)):
@@ -190,5 +310,37 @@ def _results_by_status(results: list[CheckResult]) -> dict[CheckStatus, list[Che
     return dict(grouped)
 
 
+def _reviewable_doctor_health_error_is_covered(
+    result: CheckResult,
+    results: list[CheckResult],
+    notes_by_result: dict[int | None, ReviewNote],
+) -> bool:
+    module_result = next(
+        (
+            item
+            for item in results
+            if item.module == "doctor"
+            and item.check_id == "doctor.module_status"
+            and item.status == CheckStatus.MANUAL_REVIEW
+            and item.metadata.get("doctor_manual_review_path") is True
+        ),
+        None,
+    )
+
+    return (
+        result.module == "doctor"
+        and result.check_id == "doctor.service.health"
+        and result.status == CheckStatus.ERROR
+        and result.metadata.get("doctor_error_type") == "health_issue"
+        and result.metadata.get("reviewable_health_issue") is True
+        and module_result is not None
+        and _has_text(notes_by_result.get(module_result.id))
+    )
+
+
 def _has_text(note: ReviewNote | None) -> bool:
     return bool(note and note.note.strip())
+
+
+def _dashboard_reviewed(note: ReviewNote | None) -> bool:
+    return bool(note and note.reviewed)

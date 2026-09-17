@@ -17,7 +17,7 @@ def main() -> None:
     repo = Repository(
         os.getenv("WEEKEND_REPORT_DATABASE_URL", "sqlite:///data/weekend-report.sqlite")
     )
-    config = load_config_dir(os.getenv("WEEKEND_REPORT_CONFIG_DIR", "config"))
+    config = load_config_dir(os.getenv("WEEKEND_REPORT_CONFIG_DIR", "deploy/docker/config"))
     evidence = EvidenceManager(os.getenv("WEEKEND_REPORT_EVIDENCE_ROOT", "runs"))
     while True:
         recover_stale_runs(repo, config, worker_id)

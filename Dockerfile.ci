@@ -1,0 +1,74 @@
+# Dedicated CI image for Weekend Report Automation.
+#
+# Build this image on an Internet-connected machine.
+# The image is then saved, transferred to the closed network, loaded, tagged
+# with the internal registry prefix, and pushed to the internal registry.
+#
+# Runtime/application dependencies come from requirements.txt.
+# CI-only tools are installed explicitly below.
+#
+# IMPORTANT:
+# The vulnerability audit is executed while this image is built online.
+# The closed GitLab pipeline verifies the baked audit evidence and the exact
+# requirements.txt hash instead of attempting to contact PyPI/OSV.
+
+FROM docker:27.5.1-cli AS docker_cli
+
+FROM python:3.14.7-slim-trixie
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker_cli /usr/local/libexec/docker/cli-plugins/docker-compose \
+    /usr/local/libexec/docker/cli-plugins/docker-compose
+
+COPY requirements.txt /tmp/requirements.txt
+
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt \
+    && python -m pip install --no-cache-dir \
+        ruff \
+        mypy \
+        types-PyYAML \
+        pip-audit \
+        pytest \
+        bandit \
+    && python -m pip check
+
+RUN mkdir -p /usr/local/share/weekend-report-ci \
+    && sha256sum /tmp/requirements.txt | cut -d ' ' -f 1 \
+        > /usr/local/share/weekend-report-ci/requirements.sha256 \
+    && python -m pip freeze \
+        > /usr/local/share/weekend-report-ci/installed-packages.txt \
+    && python -m pip_audit \
+        --format json \
+        --output /usr/local/share/weekend-report-ci/pip-audit.json \
+    && date -u +"%Y-%m-%dT%H:%M:%SZ" \
+        > /usr/local/share/weekend-report-ci/pip-audit-passed-at
+
+RUN test -s /usr/local/share/weekend-report-ci/requirements.sha256 \
+    && test -s /usr/local/share/weekend-report-ci/pip-audit.json \
+    && test -s /usr/local/share/weekend-report-ci/pip-audit-passed-at
+
+RUN python -c "import fastapi, starlette, uvicorn, jinja2, httpx, yaml, psycopg"
+
+RUN python --version \
+    && ruff --version \
+    && mypy --version \
+    && python -m pip_audit --version \
+    && pytest --version \
+    && bandit --version \
+    && docker --version \
+    && docker compose version
+
+CMD ["python", "--version"]

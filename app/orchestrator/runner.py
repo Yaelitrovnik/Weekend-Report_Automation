@@ -3,7 +3,6 @@ from __future__ import annotations
 import traceback
 from typing import Any
 
-from app.collectors.database import DatabaseCollector
 from app.collectors.doctor import DoctorCollector
 from app.collectors.infrastructure import InfrastructureCollector
 from app.collectors.portainer import PortainerCollector
@@ -14,7 +13,6 @@ from app.orchestrator.aggregation import aggregate_status
 from app.orchestrator.execution_plan import build_execution_plan
 from app.orchestrator.run_context import RunContext
 from app.time_utils import iso_now
-from app.validators.database import DatabaseValidator
 from app.validators.doctor import DoctorValidator
 from app.validators.infrastructure import InfrastructureValidator
 from app.validators.portainer import PortainerValidator
@@ -28,7 +26,6 @@ COLLECTORS: dict[str, Any] = {
     "rabbitmq": RabbitMQCollector,
     "recording": RecordingCollector,
     "infrastructure": InfrastructureCollector,
-    "database": DatabaseCollector,
 }
 
 VALIDATORS: dict[str, Any] = {
@@ -37,7 +34,6 @@ VALIDATORS: dict[str, Any] = {
     "rabbitmq": RabbitMQValidator,
     "recording": RecordingValidator,
     "infrastructure": InfrastructureValidator,
-    "database": DatabaseValidator,
 }
 
 
@@ -118,6 +114,12 @@ class OrchestratorRunner:
             self._store_result_with_evidence(context, result, parity_basis)
         all_results.extend(parity)
         status = aggregate_status(all_results, context.config)
+        if _recording_recovery_required(all_results):
+            context.repository.mark_recovery_required(
+                context.run_id,
+                "Recording cleanup/restoration requires manual recovery",
+            )
+            return all_results
         context.repository.mark_review_ready(context.run_id, status)
         return all_results
 
@@ -161,3 +163,10 @@ def _if_unavailable_status(config: dict[str, Any], module: str) -> CheckStatus:
     if status == CheckStatus.PASS:
         return CheckStatus.WARNING
     return status
+
+
+def _recording_recovery_required(results: list[CheckResult]) -> bool:
+    return any(
+        result.module == "recording" and result.metadata.get("recovery_required")
+        for result in results
+    )

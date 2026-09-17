@@ -19,16 +19,27 @@
 
 <section class="dashboard-grid">
   {% for dashboard in dashboard_cards %}
-    <article class="dashboard-card">
+    <article class="dashboard-card" data-splunk-dashboard-card>
       <div class="dashboard-card-head">
         <div>
           <p class="eyebrow">{{ dashboard.required_label }}</p>
           <h2>{{ dashboard.display_name }}</h2>
         </div>
-        <a class="button button-secondary" data-dashboard-url href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer">Open Dashboard</a>
+        <a class="button button-secondary" data-dashboard-url {% if dashboard.include_in_open_all %}data-dashboard-open-all{% endif %} href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer" > Open Dashboard </a>
       </div>
+      <label class="check-field">
+        <input type="checkbox" data-splunk-reviewed {% if dashboard.reviewed %}checked{% endif %}>
+        <span>Dashboard reviewed</span>
+      </label>
       <label class="note-field">
-        <span>Reviewer note</span>
+        <span>
+          Reviewer note
+          {% if dashboard.note_required %}
+            (required)
+          {% else %}
+            (optional)
+          {% endif %}
+        </span>
         <textarea
           data-note-endpoint="/api/runs/{{ run.run_id }}/notes/splunk/{{ dashboard.id }}"
           name="splunk-{{ dashboard.id }}">{{ dashboard.note }}</textarea>

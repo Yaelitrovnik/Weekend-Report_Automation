@@ -1,6 +1,6 @@
 # Validation Catalog
 
-**Documentation synchronized:** 2026-08-23
+**Documentation synchronized:** 2026-09-06
 
 Controlled placeholders (`<TBD>`, `<TO_VERIFY>`) are not production-ready.
 
@@ -8,23 +8,22 @@ Required unresolved values fail production preflight.
 
 ## 1. Global Rules
 
-- Expected state lives in YAML.
-- Secrets live outside YAML.
+- Business policy lives in `rules.yml`.
+- Deployment state, endpoints, inventory, and secrets live outside the image in ENV/secrets.
 - Collectors gather actual state or return a clear blocked/error payload.
 - Validators produce `PASS`, `WARNING`, `FAIL`, `ERROR`, `SKIPPED`, or `MANUAL_REVIEW`.
 - Raw/normalized evidence is persisted with checksum metadata.
 - Cross-site parity is additive and never masks expected-state failures.
 - Reviewer notes are additive and never rewrite automated statuses.
-- `config/rules.yml` is authoritative for aggregation and approval readiness.
+- `deploy/docker/config/rules.yml` is authoritative for aggregation and approval readiness.
 - CI fixture success does not mean production integration is configured.
 
 ## 2. Configuration / Runtime Identity
 
 ### `config.preflight`
 
-Actual:
-- loaded YAML;
-- referenced runtime values;
+- loaded `rules.yml`;
+- runtime ENV values;
 - schema/reference integrity.
 
 Expected:
@@ -66,10 +65,11 @@ ERROR:
 ### `portainer.collection`
 
 Actual source:
-- read-only HTTPS GET to configured Portainer Server/API.
+- read-only HTTPS GET to configured Portainer Server/API;
+- dynamic Docker Swarm service and task discovery.
 
 Expected:
-- connection URL env reference;
+- connection URL;
 - auth;
 - endpoint ID;
 - API contract;
@@ -86,16 +86,15 @@ Evidence:
 - sanitized raw/error payload;
 - normalized state.
 
+### `portainer.discovery`
+
+ERROR:
+- site collection succeeded but no services were discovered.
+
 ### `portainer.service.exists`
 
 PASS:
-- required service exists.
-
-FAIL:
-- required service absent.
-
-SKIPPED:
-- explicitly optional service absent.
+- discovered service is present and can participate in reporting/parity.
 
 ERROR:
 - site state was not collected reliably.
@@ -103,10 +102,7 @@ ERROR:
 ### `portainer.service.desired_replicas`
 
 PASS:
-- actual desired equals expected desired.
-
-FAIL:
-- reliable mismatch.
+- actual desired replica count is present and valid.
 
 ERROR:
 - missing/unreliable data.
@@ -114,10 +110,10 @@ ERROR:
 ### `portainer.service.running_replicas`
 
 PASS:
-- running equals configured expectation.
+- running replicas equal the discovered desired replicas.
 
 FAIL:
-- reliable mismatch.
+- reliable running replica shortfall or surplus.
 
 ERROR:
 - unreliable count.
@@ -125,7 +121,7 @@ ERROR:
 ### `portainer.service.healthy_replicas`
 
 PASS:
-- healthy count satisfies expectation.
+- healthy replicas equal the discovered desired replicas.
 
 FAIL:
 - reliable healthy-count shortfall.
@@ -135,27 +131,19 @@ ERROR:
 
 ### `portainer.service.image`
 
-Comparison policy:
-- `full_reference`;
-- `repository_tag`;
-- `digest`.
-
 PASS:
-- configured match.
-
-FAIL:
-- reliable mismatch.
+- discovered service image value is present for evidence/parity.
 
 ERROR:
-- unsupported comparison/unreliable collection.
+- image value is missing/unreliable.
 
 ### `portainer.service.state`
 
 PASS:
-- actual service state equals expected.
+- actual service state is allowed by `rules.yml`.
 
 FAIL:
-- reliable mismatch.
+- actual service state maps to FAIL by `rules.yml`.
 
 ERROR:
 - malformed/unreliable state.
@@ -169,7 +157,7 @@ Evaluate independently:
 - restarting;
 - starting.
 
-Configured policy decides WARNING/FAIL/IGNORE as approved.
+Configured `rules.yml` policy decides WARNING/FAIL/IGNORE as approved.
 
 Unresolved policy is ERROR/preflight-blocking.
 
@@ -184,71 +172,51 @@ Both sites being identically unhealthy must not become PASS because they match e
 ### `rabbitmq.collection`
 
 Actual:
-- Management API or fixture actuals.
+- read-only RabbitMQ Management API or fixture actuals.
 
 ERROR:
-- live collection blocked/unconfigured;
-- API unavailable;
+- configuration/runtime value missing;
+- authentication/TLS/timeout/API unavailable;
 - malformed response.
 
-### Topology existence
+Evidence:
+- sanitized Management API error payloads;
+- queue snapshots;
+- node resource payloads.
 
-Applies to:
+### `rabbitmq.queue.counts`
 
-- vhost;
-- queue;
-- exchange;
-- binding.
+Actual:
+- observed live queues;
+- `ready`;
+- `unacked`;
+- `total`;
+- recheck snapshots/check count.
 
-PASS:
-- required object exists/matches.
-
-FAIL:
-- required object missing.
-
-SKIPPED:
-- explicitly optional object absent.
-
-ERROR:
-- topology unreliable.
-
-### Queue properties / consumers / backlog
+Expected:
+- all observed queues have zero ready/unacked/total messages after configured rechecks.
 
 PASS:
-- properties match;
-- consumers >= minimum;
-- backlog below warning.
-
-WARNING:
-- warning range.
-
-FAIL:
-- property mismatch;
-- consumers below minimum;
-- backlog >= critical.
+- all counts are zero.
 
 ERROR:
-- metric/property unavailable.
+- queue count is missing/malformed;
+- any count remains non-zero after configured rechecks unless policy explicitly changes the status.
 
-### Exchange properties
+### `rabbitmq.node.file_descriptors`
+### `rabbitmq.node.socket_descriptors`
+### `rabbitmq.node.erlang_processes`
+### `rabbitmq.node.disk_space`
+
+Expected:
+- configured resource state is `green`.
 
 PASS:
-- type/durable/autodelete match.
-
-FAIL:
-- reliable mismatch.
+- collected resource state is `green`.
 
 ERROR:
-- unreliable collection.
-
-### Node alarms
-
-FAIL:
-- memory alarm active;
-- disk alarm active.
-
-ERROR:
-- alarm state unavailable.
+- collected state is non-green under current policy;
+- required green-state mapping is unavailable.
 
 ## 5. Recording
 
@@ -271,16 +239,12 @@ baseline
 Subresults include:
 
 - device selection;
-- WebApp baseline;
-- backend baseline;
+- pre-start verification;
+- four baselines;
 - start action;
-- device started;
-- WebApp increment;
-- backend increment;
+- four after-start observations;
 - stop action;
-- device stopped;
-- WebApp restored;
-- backend restored;
+- four after-stop observations;
 - cleanup;
 - module status.
 
@@ -288,11 +252,12 @@ PASS:
 - reliable expected transition.
 
 FAIL:
-- reliable bad behavior/mismatch/cleanup failure.
+- reliable bad behavior/mismatch before cleanup risk is introduced.
 
 ERROR:
 - unreliable state/unreachable/parse/unknown state;
 - live contract not approved;
+- cleanup failure;
 - recovery required.
 
 SKIPPED:
@@ -306,113 +271,140 @@ RECOVERY_REQUIRED
 
 No automatic replay.
 
-## 6. Database
+## 6. Infrastructure
 
-### `database.sync_execution`
+Infrastructure collection is read-only and uses SSH with private-key authentication.
 
-Actual:
-- owner-supplied adapter result.
+SSH requirements:
 
-ERROR:
-- function not supplied;
-- function exception;
-- malformed result;
-- unresolved live config.
-
-### Structured steps
-
-Expected true:
-
-- create success;
-- replication after create;
-- delete success;
-- replication after delete;
-- cleanup complete.
-
-PASS:
-- true.
-
-FAIL:
-- reliable false.
-
-ERROR:
-- missing/unknown/malformed.
-
-WARNING:
-- only for explicitly non-blocking errors while required booleans remain true.
-
-## 7. Infrastructure
+- private-key authentication only;
+- strict SSH host-key verification;
+- a pre-verified `known_hosts` file is required;
+- interactive password authentication is not used;
+- host-key verification must not be disabled or changed to `accept-new`.
 
 ### Collection
 
 ERROR:
-- SSH live mode unconfigured;
-- unreachable;
-- command/parse failure.
+- SSH runtime configuration is missing or unresolved;
+- private key or `known_hosts` configuration is unavailable;
+- server is unreachable;
+- SSH authentication or host verification fails;
+- command execution times out or fails;
+- required output cannot be parsed reliably.
 
 ### Filesystem
 
+Only the root filesystem is validated.
+
+Expected:
+
+```text
+path: /
+command: df -h /
+warning_percent: 70
+critical_percent: 80
+```
+
+NFS validation is not part of the Infrastructure module.
+
 PASS:
-- mount exists and utilization below warning.
+- root filesystem exists;
+- utilization is below 70%.
 
 WARNING:
-- warning range.
+- root filesystem utilization is >= 70% and < 80%.
 
 FAIL:
-- required mount missing or utilization >= critical.
+- required root filesystem is missing;
+- utilization is >= 80%.
 
 ERROR:
-- actual state unavailable.
-
-### NFS
-
-PASS:
-- required mount exists, expected source matches, usable, utilization healthy.
-
-WARNING:
-- warning range.
-
-FAIL:
-- missing/source mismatch/unusable/critical utilization.
-
-ERROR:
-- actual state unavailable.
+- filesystem command fails;
+- output is missing or cannot be parsed reliably.
 
 ### Chrony
 
-PASS:
-- synchronized;
-- expected source;
-- offset below warning.
+Infrastructure validates:
 
-WARNING:
-- warning offset range.
+- configured timezone;
+- synchronization state;
+- selected Chrony source;
+- absolute clock offset.
 
-FAIL:
-- unsynchronized/source mismatch/critical offset.
-
-ERROR:
-- output unavailable/malformed.
-
-## 8. DOCTOR
-
-Manual mode:
+The selected source is collected from:
 
 ```text
-MANUAL_REVIEW
+chronyc sources -n
 ```
 
-API mode requires an approved validation contract.
+Synchronization and offset state are collected from:
+
+```text
+chronyc tracking
+```
+
+PASS:
+- timezone matches the configured value;
+- Chrony is synchronized;
+- selected source matches the configured source;
+- absolute offset is below the warning threshold.
+
+WARNING:
+- absolute offset is in the configured warning range.
+
+FAIL:
+- timezone mismatch;
+- Chrony is unsynchronized;
+- selected source does not match;
+- absolute offset reaches the configured critical threshold.
 
 ERROR:
-- invalid config/API failure.
+- timezone or Chrony command fails;
+- synchronization state is unavailable;
+- selected source is unavailable;
+- offset is unavailable or malformed.
 
-No API PASS/WARNING/FAIL semantics may be invented.
+## 7. DOCTOR
 
-## 9. Splunk
+API mode discovers the complete service inventory returned by each site dynamically. Every discovered service is validated independently, and the two discovered service sets must match.
+
+### `doctor.collection`
+
+ERROR:
+- transport/API/authentication/timeout/schema/collection failure;
+- malformed site payload.
+
+### `doctor.service.health`
+
+PASS:
+- expected service is present and healthy.
+
+ERROR:
+- expected service is unhealthy;
+- expected service is missing;
+- health state is unknown/unparseable.
+
+Only explicitly marked unhealthy/missing service-health findings are reviewable health issues.
+
+### `doctor.module_status`
+
+PASS:
+- all discovered services are healthy on both sites;
+- both sites expose matching discovered service inventories.
+
+MANUAL_REVIEW:
+- one or more service-level health findings are reviewable health issues.
+
+ERROR:
+- any technical/transport/API/authentication/timeout/schema/collection error exists.
+
+The underlying `doctor.service.health` `ERROR` remains recorded as `ERROR` in evidence and reporting.
+
+## 8. Splunk
 
 Actual:
-- human dashboard review.
+- persisted human dashboard review state.
 
 Expected:
 - configured dashboard definitions/review-note policy.
@@ -424,9 +416,11 @@ Finalization ERROR/block:
 - required dashboard review/note missing according to policy.
 
 Evidence:
-- saved dashboard note in database/snapshot.
+- saved dashboard review acknowledgment and note in database/snapshot.
 
-## 10. Review / Finalization
+Opening a dashboard URL is not review completion.
+
+## 9. Review / Finalization
 
 ### `review.note_ownership`
 
@@ -452,6 +446,14 @@ Before APPROVE enforce configured:
 - Recording cleanup acknowledgment;
 - status-specific approval policy.
 
+Narrow DOCTOR finalization exception:
+
+- a `doctor.service.health` `ERROR` may be excluded from the `ERROR: BLOCK` finalization count only when it is explicitly marked as a reviewable health issue;
+- the same result set contains `doctor.module_status=MANUAL_REVIEW`;
+- the reviewer has saved the required acknowledgment/note on that module-level manual-review result.
+
+This exception does not apply to DOCTOR transport/API/authentication/timeout/schema/collection errors, configuration errors, infrastructure errors, RabbitMQ errors, Recording errors, Portainer errors, or any unrelated `ERROR`.
+
 FAIL:
 - explicit status policy blocks approval.
 
@@ -471,7 +473,7 @@ ERROR -> PASS
 
 Automated status and reviewer decision remain separate facts.
 
-## 11. Evidence
+## 10. Evidence
 
 ### `evidence.persistence`
 
@@ -488,31 +490,26 @@ ERROR:
 
 Raw evidence must be sanitized of known credentials/tokens.
 
-## 12. Auth / CSRF
+## 11. Application Access / CSRF
 
-### `auth.production_reviewer_identity`
+### `security.application_access`
 
-PASS:
-- authorized reviewer resolved through approved provider.
+Weekend Report does not implement an application login, local user database, trusted identity header, or authorized-reviewer list. Deployment access is controlled outside the application.
 
-FAIL:
-- unauthorized reviewer.
-
-ERROR:
-- missing/invalid provider configuration.
-
-### `auth.browser_csrf`
+### `security.browser_csrf`
 
 PASS:
-- reviewer-bound signed token valid.
+- signed token is valid when CSRF protection is configured.
 
 FAIL:
-- invalid/expired/mismatched token.
+- invalid, expired, or missing token for a protected browser mutation.
 
 ERROR:
-- signing configuration missing.
+- production preflight is missing the CSRF signing key or has an invalid TTL.
 
-## 13. Recovery
+The reviewer name is entered manually only during final confirmation and is not an access-control identity.
+
+## 12. Recovery
 
 ### `recovery.stale_worker`
 
@@ -531,14 +528,14 @@ PASS:
 ERROR:
 - unresolved/invalid recovery.
 
-## 14. Reporting
+## 13. Reporting
 
 ### `reporting.final_pdf_access`
 
 PASS:
 - route serves recorded run-owned final PDF;
 - safe path;
-- authorized access.
+- safe run-owned report path and existing file.
 
 ERROR:
 - unsafe/missing/arbitrary path.
@@ -552,7 +549,7 @@ PASS:
 ERROR:
 - completeness mismatch.
 
-## 15. Docker Runtime
+## 14. Docker Runtime
 
 ### `docker.runtime_secret_boundary`
 
@@ -584,7 +581,7 @@ ERROR/FAIL:
 Important:
 `compose.ci.yml` must not rebuild a different image.
 
-## 16. CI / Release Validation
+## 15. CI / Release Validation
 
 ### `ci.pre_image_quality`
 
@@ -693,7 +690,7 @@ PASS:
 FAIL:
 - production secret names/values are embedded where forbidden.
 
-## 17. Release Artifact
+## 16. Release Artifact
 
 Verified artifact contains:
 

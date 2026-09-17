@@ -59,14 +59,13 @@
       {% if (run.state|string) == "RUNNING" %}
         <div><dt>Current module</dt><dd>{{ module_label(run.current_module) if run.current_module else "Starting" }}</dd></div>
       {% endif %}
-      <div><dt>Started by</dt><dd>{{ run.started_by }}</dd></div>
     </dl>
   </article>
   <article class="summary-card">
     <p class="eyebrow">Review Decision</p>
     {% if run.review_decision %}
       {{ ui.status_badge(run.review_decision) }}
-      <p>{{ run.reviewed_by or "Reviewer" }} at {{ run.reviewed_at or "time not recorded" }}</p>
+      <p>Recorded at {{ run.reviewed_at or "time not recorded" }}</p>
     {% else %}
       <span class="quiet-badge">Pending human review</span>
     {% endif %}

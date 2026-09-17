@@ -4,16 +4,16 @@ import os
 
 from fastapi import Request
 
-from app.auth import require_csrf_for_mutation, resolve_reviewer
 from app.config.loader import load_config_dir
 from app.database.repository import Repository
 from app.evidence.manager import EvidenceManager
+from app.security import require_csrf_for_mutation
 
 _repo: Repository | None = None
 
 
 def get_config():
-    return load_config_dir(os.getenv("WEEKEND_REPORT_CONFIG_DIR", "config"))
+    return load_config_dir(os.getenv("WEEKEND_REPORT_CONFIG_DIR", "deploy/docker/config"))
 
 
 def get_repository() -> Repository:
@@ -28,11 +28,5 @@ def get_evidence_manager() -> EvidenceManager:
     return EvidenceManager(os.getenv("WEEKEND_REPORT_EVIDENCE_ROOT", "runs"))
 
 
-def get_reviewer(request: Request) -> str:
-    return resolve_reviewer(request)
-
-
-def get_mutating_reviewer(request: Request) -> str:
-    reviewer = resolve_reviewer(request, mutating=True)
-    require_csrf_for_mutation(request, reviewer)
-    return reviewer
+def get_mutation_guard(request: Request) -> None:
+    require_csrf_for_mutation(request)

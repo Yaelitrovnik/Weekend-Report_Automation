@@ -1,3 +1,7 @@
+default:
+  tags:
+    - docker
+
 stages:
   - validate
   - quality
@@ -9,16 +13,13 @@ variables:
 
 workflow:
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
       when: never
     - if: '$CI_COMMIT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
     - when: never
 
-default:
-  interruptible: true
-
 include:
-  - local: .gitlab/ci/quality.yml
-  - local: .gitlab/ci/image.yml
+  - local: .gitlab-ci-cd/quality.yml
+  - local: .gitlab-ci-cd/image.yml

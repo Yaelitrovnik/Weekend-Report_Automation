@@ -3,6 +3,15 @@ __pycache__
 *.pyc
 .env
 .env.*
+config/
+runs/
+data/
+deploy/docker/.env
+deploy/docker/env/*.env
+deploy/docker/env/*.env.example
+deploy/docker/config/
+deploy/docker/secrets/
+deploy/docker/tls/
 runs/
 data/
 .pytest_cache/
@@ -19,3 +28,8 @@ dist/
 .github/
 .gitlab/
 .gitlab-ci.yml
+
+# Runtime-only authentication / TLS material
+*.key
+*.pem
+*.crt

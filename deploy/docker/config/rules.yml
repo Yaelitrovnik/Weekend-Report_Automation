@@ -1,0 +1,196 @@
+modules:
+  portainer:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+  doctor:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+  rabbitmq:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+  recording:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+  infrastructure:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+  splunk:
+    enabled: true
+    required: true
+    if_unavailable_status: ERROR
+
+aggregation:
+  fail_blocks: true
+  error_blocks: true
+  manual_review_blocks: true
+  skipped_blocks: true
+  warning_overall_status: WARNING
+
+parity:
+  - enabled: true
+    module: portainer
+    fields:
+      - service_presence
+      - desired_replicas
+      - running_replicas
+      - healthy_replicas
+      - image
+      - service_state
+    mismatch_status: FAIL
+    allowed_differences: []
+  - enabled: true
+    module: doctor
+    fields:
+      - service_presence
+    mismatch_status: FAIL
+    allowed_differences: []
+
+portainer:
+  environment_type: docker_swarm
+  connection:
+    timeouts:
+      connect_seconds: 5
+      read_seconds: 20
+    retries:
+      attempts: 1
+      backoff_seconds: 0
+  service_state_policy:
+    running: PASS
+    starting: WARNING
+    degraded: FAIL
+    stopped: FAIL
+  task_state_policy:
+    failed: FAIL
+    rejected: FAIL
+    restarting: FAIL
+    starting: WARNING
+
+doctor:
+  validation:
+    healthy_status: PASS
+    unhealthy_status: ERROR
+    unhealthy_reason_required: true
+    all_healthy_status: PASS
+    any_unhealthy_status: MANUAL_REVIEW
+  manual_review:
+    required_when: any_unhealthy
+    note_required: true
+    instructions: >
+      Review every unhealthy DOCTOR service and its reported reason before
+      making the final decision.
+
+rabbitmq:
+  connection:
+    timeout_seconds: 5
+    retry_attempts: 1
+  queues:
+    scope: all
+    expected:
+      ready: 0
+      unacked: 0
+      total: 0
+    recheck:
+      refresh_attempts: 3
+      delay_seconds: 3
+    nonzero_after_rechecks_status: ERROR
+  nodes:
+    scope: all
+    expected:
+      file_descriptors: green
+      socket_descriptors: green
+      erlang_processes: green
+      disk_space: green
+    unhealthy_status: ERROR
+
+recording:
+  workflow: existing_device_start_stop
+  safety:
+    create_device_allowed: false
+    delete_device_allowed: false
+    state_changing_calls_require_explicit_approval: true
+    crash_after_start_requires_recovery: true
+    automatic_replay_after_unknown_state: false
+  manager:
+    device_selection:
+      use_existing_device_only: true
+      required_initial_state: not_recording
+      no_eligible_device_status: ERROR
+  validation:
+    baseline:
+      capture_at_test_start: true
+    after_start:
+      site1_webapp_count_delta: 1
+      site2_webapp_count_delta: 1
+      site1_server_count_delta: 1
+      site2_server_count_delta: 1
+    after_stop:
+      site1_webapp_must_return_to_baseline: true
+      site2_webapp_must_return_to_baseline: true
+      site1_server_must_return_to_baseline: true
+      site2_server_must_return_to_baseline: true
+  polling:
+    timeout_seconds: 120
+    interval_seconds: 5
+  result_policy:
+    functional_mismatch_status: FAIL
+    technical_failure_status: ERROR
+    cleanup_failure_status: ERROR
+    cleanup_failure_requires_recovery: true
+
+infrastructure:
+  ssh:
+    auth: private_key
+    host_key_policy: strict
+    connect_timeout: 5
+    command_timeout: 5
+  filesystem:
+    path: /
+    command: df -h /
+    warning_percent: 70
+    critical_percent: 80
+    required: true
+  chrony:
+    warning_offset: 0.5
+    critical_offset: 1.0
+    required: true
+
+splunk:
+  dashboard_defaults:
+    required_review: true
+    note_required: false
+  open_all:
+    include_optional: true
+
+review:
+  general_notes_enabled: true
+  general_note_required: true
+  required_module_notes:
+    - portainer
+    - doctor
+    - rabbitmq
+    - recording
+    - infrastructure
+    - splunk
+  result_note_required_statuses:
+    - MANUAL_REVIEW
+  manual_review_acknowledgment_required: true
+  recording_cleanup_acknowledgment_required: true
+  reject_allowed: true
+  approval_status_policy:
+    WARNING: REQUIRE_NOTE
+    FAIL: BLOCK
+    ERROR: BLOCK
+    SKIPPED: BLOCK
+    MANUAL_REVIEW: REQUIRE_NOTE
+
+recovery:
+  heartbeat_timeout_seconds: 600
+  operator_instructions: >
+    Do not start a new Weekend Report until recovery is completed. Review the
+    failed run and its evidence. After the environment is confirmed clean,
+    resolve the recovery state and run a new Weekend Report.

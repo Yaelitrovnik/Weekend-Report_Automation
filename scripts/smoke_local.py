@@ -6,16 +6,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.config.loader import load_config_dir
 from app.database.repository import Repository
 from app.evidence.manager import EvidenceManager
 from app.orchestrator.run_context import RunContext
 from app.orchestrator.runner import OrchestratorRunner
 from app.runtime_identity import current_runtime_identity
+from tests.fixtures.config_factory import load_fixture_config
 
 
 def main() -> int:
-    config = load_config_dir("tests/fixtures/config_valid")
+    config = load_fixture_config()
     with tempfile.TemporaryDirectory() as tmp:
         repo = Repository(f"sqlite:///{Path(tmp) / 'db.sqlite'}")
         evidence = EvidenceManager(Path(tmp) / "evidence")

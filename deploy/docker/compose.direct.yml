@@ -1,0 +1,20 @@
+services:
+  web:
+    # Direct-access mode. Application settings come from env/app.env.
+    command:
+      - uvicorn
+      - app.web.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ssl-certfile
+      - /app/tls/server.crt
+      - --ssl-keyfile
+      - /app/tls/server.key
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - ./tls:/app/tls:ro

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -9,8 +8,7 @@ from typing import Any
 import httpx
 
 from app.collectors.base import Collector
-from app.config.effective import resolve_portainer_expected
-from app.config.schema import UNRESOLVED_PLACEHOLDERS
+from app.config.schema import is_unresolved_placeholder
 from app.orchestrator.run_context import RunContext
 from app.time_utils import iso_now
 
@@ -126,7 +124,7 @@ class PortainerClient:
 
     def _auth_headers(self) -> dict[str, str]:
         auth_type = self.settings.auth_type
-        if auth_type in UNRESOLVED_PLACEHOLDERS:
+        if is_unresolved_placeholder(auth_type):
             raise PortainerError(
                 "PORTAINER_CONFIGURATION_ERROR",
                 "Portainer authentication method is unresolved",
@@ -157,40 +155,51 @@ class PortainerClient:
         )
 
     def _get_with_retries(
-        self, client: httpx.Client, path: str, headers: dict[str, str]
+        self,
+        client: httpx.Client,
+        path: str,
+        headers: dict[str, str],
     ) -> Any:
-        attempts = self.settings.retries + 1
+        attempts = max(1, self.settings.retries)
         last_error: PortainerError | None = None
-        for attempt in range(attempts):
+
+        for attempt in range(1, attempts + 1):
             try:
-                response = client.get(self._url(path), headers=headers)
+                response = client.get(
+                    self._url(path),
+                    headers=headers,
+                )
+
                 if response.status_code in {401, 403}:
                     raise PortainerError(
                         "PORTAINER_AUTHENTICATION_ERROR",
                         f"Portainer authentication failed with HTTP {response.status_code}",
                         site=self.settings.site,
                         status_code=response.status_code,
-                        metadata={"path": path, "attempt": attempt + 1},
+                        metadata={"path": path, "attempt": attempt},
                     )
-                if response.status_code in TRANSIENT_STATUS_CODES and attempt + 1 < attempts:
+
+                if response.status_code in TRANSIENT_STATUS_CODES and attempt < attempts:
                     last_error = PortainerError(
                         "PORTAINER_COLLECTION_ERROR",
                         f"Portainer transient HTTP {response.status_code}",
                         site=self.settings.site,
                         status_code=response.status_code,
                         retryable=True,
-                        metadata={"path": path, "attempt": attempt + 1},
+                        metadata={"path": path, "attempt": attempt},
                     )
                     self._sleep_before_retry()
                     continue
+
                 if response.status_code >= 400:
                     raise PortainerError(
                         "PORTAINER_COLLECTION_ERROR",
                         f"Portainer HTTP {response.status_code}",
                         site=self.settings.site,
                         status_code=response.status_code,
-                        metadata={"path": path, "attempt": attempt + 1},
+                        metadata={"path": path, "attempt": attempt},
                     )
+
                 try:
                     return response.json()
                 except ValueError as exc:
@@ -198,40 +207,48 @@ class PortainerClient:
                         "PORTAINER_INVALID_RESPONSE",
                         "Portainer response was not valid JSON",
                         site=self.settings.site,
-                        metadata={"path": path, "attempt": attempt + 1},
+                        metadata={"path": path, "attempt": attempt},
                     ) from exc
+
             except httpx.TimeoutException as exc:
                 last_error = PortainerError(
                     "PORTAINER_TIMEOUT",
-                    "Portainer request timed out after configured retry policy",
+                    "Portainer request timed out",
                     site=self.settings.site,
                     retryable=True,
-                    metadata={"path": path, "attempt": attempt + 1},
+                    metadata={"path": path, "attempt": attempt},
                 )
-                if attempt + 1 >= attempts:
+
+                if attempt >= attempts:
                     raise last_error from exc
+
                 self._sleep_before_retry()
+
             except httpx.HTTPError as exc:
                 code = (
                     "PORTAINER_TLS_ERROR"
                     if _looks_like_tls_error(exc)
                     else "PORTAINER_COLLECTION_ERROR"
                 )
-                retryable = code != "PORTAINER_TLS_ERROR"
+
                 last_error = PortainerError(
                     code,
                     "Portainer TLS/certificate error"
                     if code == "PORTAINER_TLS_ERROR"
                     else "Portainer connection failed",
                     site=self.settings.site,
-                    retryable=retryable,
-                    metadata={"path": path, "attempt": attempt + 1},
+                    retryable=code != "PORTAINER_TLS_ERROR",
+                    metadata={"path": path, "attempt": attempt},
                 )
-                if code == "PORTAINER_TLS_ERROR" or attempt + 1 >= attempts:
+
+                if code == "PORTAINER_TLS_ERROR" or attempt >= attempts:
                     raise last_error from exc
+
                 self._sleep_before_retry()
+
         if last_error is not None:
             raise last_error
+
         raise PortainerError(
             "PORTAINER_COLLECTION_ERROR",
             "Portainer request failed without a response",
@@ -279,7 +296,6 @@ class PortainerCollector(Collector):
         return self._collect_live(config, context)
 
     def _collect_live(self, config: dict[str, Any], context: RunContext) -> dict[str, Any]:
-        config = resolve_portainer_expected(config)
         sites: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
         for site_id, site_config in (config.get("sites") or {}).items():
@@ -353,14 +369,12 @@ def _client_settings(site_id: str, site_config: dict[str, Any]) -> PortainerClie
     auth = connection.get("auth") or {}
     timeout_cfg = connection.get("timeouts") or {}
     retry_cfg = connection.get("retries") or {}
-    url_env = connection.get("url_env")
-    token_env = auth.get("token_env") or connection.get("token_env")
-    auth_type = auth.get("type") or connection.get("auth_type")
+    auth_type = auth.get("type")
     endpoint_id = connection.get("endpoint_id")
-    api_contract = connection.get("api_contract") or site_config.get("api_contract")
-    base_url = _env_required(url_env, site_id, "Portainer URL")
+    api_contract = connection.get("api_contract")
+    base_url = _required_string(connection.get("url"), site_id, "url")
     token = (
-        _env_required(token_env, site_id, "Portainer token")
+        _required_string(auth.get("token"), site_id, "auth.token")
         if auth_type in TOKEN_AUTH_TYPES
         else None
     )
@@ -456,9 +470,12 @@ def _normalize_service(
     labels = spec.get("Labels") or service.get("Labels") or {}
     stack = labels.get("com.docker.stack.namespace")
     desired_replicas = replicated.get("Replicas")
-    service_tasks = tasks_by_service.get(service_id, [])
-    task_states = [_normalize_task(task) for task in service_tasks]
+
+    all_task_states = [_normalize_task(task) for task in tasks_by_service.get(service_id, [])]
+    task_states = [task for task in all_task_states if _is_current_task(task)]
+
     running_replicas = sum(1 for task in task_states if task.get("current_state") == "running")
+
     health_values = [
         task.get("health")
         for task in task_states
@@ -474,12 +491,24 @@ def _normalize_service(
         if health_available
         else None
     )
+
     failed_tasks = sum(1 for task in task_states if task.get("current_state") == "failed")
     rejected_tasks = sum(1 for task in task_states if task.get("current_state") == "rejected")
     restarting_tasks = sum(1 for task in task_states if task.get("current_state") == "restarting")
     starting_tasks = sum(1 for task in task_states if task.get("current_state") == "starting")
+
+    service_mode = "replicated" if "Replicated" in mode_obj else "global"
+    service_state = _derive_service_state(
+        service_mode=service_mode,
+        desired_replicas=desired_replicas,
+        running_replicas=running_replicas,
+        failed_tasks=failed_tasks,
+        rejected_tasks=rejected_tasks,
+        restarting_tasks=restarting_tasks,
+        starting_tasks=starting_tasks,
+    )
     update_status = service.get("UpdateStatus") or {}
-    service_state = update_status.get("State") or service.get("service_state") or "active"
+
     return {
         "site": site_id,
         "id": service_id,
@@ -490,19 +519,25 @@ def _normalize_service(
         "healthy_replicas": healthy_replicas,
         "health": {
             "available": health_available,
-            "source": "docker_task_container_health"
-            if health_available
-            else "not_available_from_response",
-            "definition": (
-                "healthy replicas are running tasks with Docker container health status healthy"
+            "source": (
+                "docker_task_container_health"
                 if health_available
-                else "not derived; Docker/Portainer response did not expose task health status"
+                else "not_available_from_response"
+            ),
+            "definition": (
+                "healthy replicas are current running tasks with Docker container "
+                "health status healthy"
+                if health_available
+                else "not derived; Docker/Portainer task response did not expose "
+                "container health status"
             ),
         },
         "image": container_spec.get("Image") or service.get("Image") or service.get("image"),
-        "service_mode": "replicated" if "Replicated" in mode_obj else "global",
+        "service_mode": service_mode,
         "service_state": service_state,
+        "update_state": update_status.get("State"),
         "task_states": task_states,
+        "task_history_count": len(all_task_states),
         "failed_tasks": failed_tasks,
         "rejected_tasks": rejected_tasks,
         "restarting_tasks": restarting_tasks,
@@ -511,24 +546,85 @@ def _normalize_service(
         "metadata": {
             "portainer_target": "swarm_service",
             "environment_type": site_config.get("environment_type", "docker_swarm"),
+            "task_scope": "current_non_terminal_tasks",
         },
     }
+
+
+def _is_current_task(task: dict[str, Any]) -> bool:
+    """Exclude historical/terminal Swarm tasks from current-state counts."""
+
+    desired = str(task.get("desired_state") or "").lower()
+    current = str(task.get("current_state") or "").lower()
+
+    if desired in {"shutdown", "remove"}:
+        return False
+    if current in {"complete", "shutdown", "remove", "orphaned"}:
+        return False
+    return True
+
+
+def _derive_service_state(
+    *,
+    service_mode: str,
+    desired_replicas: Any,
+    running_replicas: int,
+    failed_tasks: int,
+    rejected_tasks: int,
+    restarting_tasks: int,
+    starting_tasks: int,
+) -> str:
+    """Normalize Swarm service state for the Weekend Report contract.
+
+    Docker's service object does not expose a general-purpose "running" state.
+    The report therefore derives one from the current task set while retaining
+    Docker's UpdateStatus separately as ``update_state``.
+    """
+
+    if failed_tasks or rejected_tasks or restarting_tasks:
+        return "degraded"
+
+    if service_mode == "replicated" and isinstance(desired_replicas, int):
+        if desired_replicas == 0:
+            return "stopped"
+        if running_replicas >= desired_replicas:
+            return "running"
+        if starting_tasks > 0:
+            return "starting"
+        return "degraded"
+
+    if running_replicas > 0:
+        return "running"
+    if starting_tasks > 0:
+        return "starting"
+    return "degraded"
 
 
 def _normalize_task(task: dict[str, Any]) -> dict[str, Any]:
     status = task.get("Status") or {}
     container_status = status.get("ContainerStatus") or {}
     health = container_status.get("Health") or {}
+
+    desired_state = task.get("DesiredState") or task.get("desired_state")
+    current_state = status.get("State") or task.get("state")
+    health_status = health.get("Status") or task.get("health")
+
     return {
         "id": task.get("ID") or task.get("Id") or task.get("id"),
-        "desired_state": task.get("DesiredState") or task.get("desired_state"),
-        "current_state": status.get("State") or task.get("state"),
-        "health": health.get("Status") or task.get("health"),
+        "desired_state": _lower_string(desired_state),
+        "current_state": _lower_string(current_state),
+        "health": _lower_string(health_status),
         "error": status.get("Err") or task.get("error"),
         "message": status.get("Message") or task.get("message"),
         "node_id": task.get("NodeID") or task.get("node_id"),
         "slot": task.get("Slot") or task.get("slot"),
     }
+
+
+def _lower_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip().lower() or None
 
 
 def _normalize_fixture_site(site_id: str, site_config: dict[str, Any]) -> dict[str, Any]:
@@ -542,7 +638,7 @@ def _normalize_fixture_site(site_id: str, site_config: dict[str, Any]) -> dict[s
         service.setdefault("rejected_tasks", 0)
         service.setdefault("restarting_tasks", 0)
         service.setdefault("starting_tasks", 0)
-        service.setdefault("service_state", "active")
+        service.setdefault("service_state", "running")
         service.setdefault("service_mode", "replicated")
         if "health" not in service:
             health_available = service.get("healthy_replicas") is not None
@@ -591,7 +687,7 @@ def _sensitive_key(key: str) -> bool:
 
 
 def _required_string(value: Any, site: str, field: str) -> str:
-    if not isinstance(value, str) or not value.strip() or value in UNRESOLVED_PLACEHOLDERS:
+    if not isinstance(value, str) or not value.strip() or is_unresolved_placeholder(value):
         raise PortainerError(
             "PORTAINER_CONFIGURATION_ERROR",
             f"Portainer {field} is required for live collection",
@@ -600,22 +696,9 @@ def _required_string(value: Any, site: str, field: str) -> str:
     return value.strip()
 
 
-def _env_required(env_name: Any, site: str, label: str) -> str:
-    name = _required_string(env_name, site, f"{label} env reference")
-    value = os.getenv(name, "").strip()
-    if not value or value in UNRESOLVED_PLACEHOLDERS:
-        raise PortainerError(
-            "PORTAINER_CONFIGURATION_ERROR",
-            f"{label} runtime environment variable is missing or unresolved: {name}",
-            site=site,
-            metadata={"env": name},
-        )
-    return value
-
-
 def _tls_verify(tls: dict[str, Any], site: str) -> bool | str:
     value = tls.get("verify")
-    if value in UNRESOLVED_PLACEHOLDERS or value is None:
+    if is_unresolved_placeholder(value) or value is None:
         raise PortainerError(
             "PORTAINER_CONFIGURATION_ERROR",
             "Portainer TLS verification policy is unresolved",
@@ -624,16 +707,7 @@ def _tls_verify(tls: dict[str, Any], site: str) -> bool | str:
     if value is True:
         return True
     if value == "custom_ca":
-        ca_env = _required_string(tls.get("ca_file_env"), site, "tls.ca_file_env")
-        ca_file = os.getenv(ca_env, "").strip()
-        if not ca_file or ca_file in UNRESOLVED_PLACEHOLDERS:
-            raise PortainerError(
-                "PORTAINER_CONFIGURATION_ERROR",
-                f"Portainer CA certificate path is missing or unresolved: {ca_env}",
-                site=site,
-                metadata={"env": ca_env},
-            )
-        return ca_file
+        return _required_string(tls.get("ca_file"), site, "tls.ca_file")
     if value is False:
         raise PortainerError(
             "PORTAINER_CONFIGURATION_ERROR",
@@ -648,7 +722,7 @@ def _tls_verify(tls: dict[str, Any], site: str) -> bool | str:
 
 
 def _number(value: Any, site: str, field: str) -> float:
-    if isinstance(value, int | float) and value >= 0:
+    if isinstance(value, int | float) and not isinstance(value, bool) and value >= 0:
         return float(value)
     raise PortainerError(
         "PORTAINER_CONFIGURATION_ERROR",
@@ -658,7 +732,7 @@ def _number(value: Any, site: str, field: str) -> float:
 
 
 def _integer(value: Any, site: str, field: str) -> int:
-    if isinstance(value, int) and value >= 0:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     raise PortainerError(
         "PORTAINER_CONFIGURATION_ERROR",

@@ -36,6 +36,10 @@ class ReviewDecision(StrEnum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"
 
+class ManualDBReviewResult(StrEnum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    NOT_RUN = "NOT RUN"
 
 class DistributionStatus(StrEnum):
     NOT_CONFIGURED = "NOT_CONFIGURED"
@@ -54,13 +58,15 @@ STATUS_STRENGTH = {
 }
 
 
+SYSTEM_ACTOR = "local-operator"
+
+
 MODULES = [
     "portainer",
     "doctor",
     "rabbitmq",
     "recording",
     "infrastructure",
-    "database",
     "splunk",
 ]
 
@@ -130,10 +136,21 @@ class ReviewNote:
     module: str | None = None
     result_id: int | None = None
     dashboard_id: str | None = None
+    reviewed: bool = False
     id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
+@dataclass(slots=True)
+class ManualDBReview:
+    run_id: str
+    display_name: str
+    script_path: str
+    result: ManualDBReviewResult
+    comment: str
+    reviewer: str
+    reviewed_at: str | None = None
+    id: int | None = None
 
 @dataclass(slots=True)
 class SiteSummary:
