@@ -84,23 +84,20 @@ class DoctorCollector(Collector):
         api = doctor.get("api") or {}
         site_ids = _runtime_site_ids(context.config)
 
-        if len(site_ids) != 2:
+        if not site_ids:
             return _blocked_payload(
                 "DOCTOR_CONFIGURATION_ERROR",
-                "DOCTOR live collection requires exactly two runtime sites",
+                "DOCTOR live collection requires at least one valid runtime site",
             )
 
-        site_urls = [
-            api.get("site1_url"),
-            api.get("site2_url"),
-        ]
+        site_urls = api.get("sites") or {}
 
         sites: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
 
-        for site_id, raw_url in zip(site_ids, site_urls, strict=False):
+        for site_id in site_ids:
             try:
-                url = _required_url(raw_url, site_id)
+                url = _required_url(site_urls.get(site_id), site_id)
                 payload = self._get_json(site_id, url)
 
                 sites[site_id] = _normalize_site(

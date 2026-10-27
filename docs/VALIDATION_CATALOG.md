@@ -218,76 +218,23 @@ ERROR:
 - collected state is non-green under current policy;
 - required green-state mapping is unavailable.
 
-## 5. Recording
+## 5. Infrastructure
 
-### Workflow contract
-
-No device creation/deletion.
-
-Expected sequence:
-
-```text
-baseline
--> select existing non-recording device
--> start same device
--> verify increment/state
--> stop same device
--> verify restoration
--> cleanup
-```
-
-Subresults include:
-
-- device selection;
-- pre-start verification;
-- four baselines;
-- start action;
-- four after-start observations;
-- stop action;
-- four after-stop observations;
-- cleanup;
-- module status.
-
-PASS:
-- reliable expected transition.
-
-FAIL:
-- reliable bad behavior/mismatch before cleanup risk is introduced.
-
-ERROR:
-- unreliable state/unreachable/parse/unknown state;
-- live contract not approved;
-- cleanup failure;
-- recovery required.
-
-SKIPPED:
-- only if explicitly approved policy allows it.
-
-Unknown state after a state-changing action:
-
-```text
-RECOVERY_REQUIRED
-```
-
-No automatic replay.
-
-## 6. Infrastructure
-
-Infrastructure collection is read-only and uses SSH with private-key authentication.
+Infrastructure collection is read-only and uses SSH with username/password authentication.
 
 SSH requirements:
 
-- private-key authentication only;
+- username/password authentication only;
 - strict SSH host-key verification;
 - a pre-verified `known_hosts` file is required;
-- interactive password authentication is not used;
+- password is passed directly to Paramiko in memory, never through process arguments;
 - host-key verification must not be disabled or changed to `accept-new`.
 
 ### Collection
 
 ERROR:
 - SSH runtime configuration is missing or unresolved;
-- private key or `known_hosts` configuration is unavailable;
+- username, password, or `known_hosts` configuration is unavailable;
 - server is unreachable;
 - SSH authentication or host verification fails;
 - command execution times out or fails;
@@ -295,33 +242,47 @@ ERROR:
 
 ### Filesystem
 
-Only the root filesystem is validated.
+Weekend Report executes `df -h | grep mapper` on every configured infrastructure
+server in every site. It discovers mapper filesystems dynamically and evaluates every
+returned filesystem independently. No device inventory or specific mountpoint is configured;
+`/` is not required. Each result identifies the site, server, device, mountpoint, and usage.
 
-Expected:
+Versioned policy in `rules.yml`:
 
-```text
-path: /
-command: df -h /
+```yaml
+command: df -h | grep mapper
+match: mapper
 warning_percent: 70
 critical_percent: 80
+required: true
 ```
 
 NFS validation is not part of the Infrastructure module.
 
 PASS:
-- root filesystem exists;
-- utilization is below 70%.
+- an individual mapper filesystem's utilization is below 70%.
 
 WARNING:
-- root filesystem utilization is >= 70% and < 80%.
+- utilization is >= 70% and < 80%.
 
 FAIL:
-- required root filesystem is missing;
-- utilization is >= 80%.
+- utilization is >= 80%;
+- empty successful output or grep exit 1 without diagnostics:
+  "No mapper filesystems were found".
 
 ERROR:
-- filesystem command fails;
-- output is missing or cannot be parsed reliably.
+- SSH connectivity, authentication, strict known_hosts verification, or timeout fails;
+- command exit is greater than 1 (including SSH exit 255);
+- stderr diagnostics indicate collection may be incomplete, even with exit 0 or 1;
+- exit 1 unexpectedly includes output;
+- output is missing, malformed, truncated, or cannot be parsed reliably.
+
+The exact pipeline reports grep's exit status. A clean exit 1 is a reachable server
+with no matching filesystems, not an SSH failure. Diagnostics on stderr are treated
+conservatively as ERROR because a failing `df` can otherwise be masked by grep.
+The pipeline cannot expose a silent upstream failure that emits no diagnostics.
+Mixed valid and malformed output is ERROR rather than a partially successful check.
+Raw output and command metadata are retained in evidence alongside normalized results.
 
 ### Chrony
 
@@ -365,9 +326,9 @@ ERROR:
 - selected source is unavailable;
 - offset is unavailable or malformed.
 
-## 7. DOCTOR
+## 6. DOCTOR
 
-API mode discovers the complete service inventory returned by each site dynamically. Every discovered service is validated independently, and the two discovered service sets must match.
+API mode discovers the complete service inventory returned by each site dynamically. Every discovered service is validated independently, and the discovered service sets must match across all runtime sites when there is more than one site.
 
 ### `doctor.collection`
 
@@ -390,8 +351,8 @@ Only explicitly marked unhealthy/missing service-health findings are reviewable 
 ### `doctor.module_status`
 
 PASS:
-- all discovered services are healthy on both sites;
-- both sites expose matching discovered service inventories.
+- all discovered services are healthy on every runtime site;
+- all sites expose matching discovered service inventories when parity applies.
 
 MANUAL_REVIEW:
 - one or more service-level health findings are reviewable health issues.
@@ -401,7 +362,7 @@ ERROR:
 
 The underlying `doctor.service.health` `ERROR` remains recorded as `ERROR` in evidence and reporting.
 
-## 8. Splunk
+## 7. Splunk
 
 Actual:
 - persisted human dashboard review state.
@@ -420,7 +381,7 @@ Evidence:
 
 Opening a dashboard URL is not review completion.
 
-## 9. Review / Finalization
+## 8. Review / Finalization
 
 ### `review.note_ownership`
 
@@ -443,7 +404,6 @@ Before APPROVE enforce configured:
 - dashboard review;
 - required notes;
 - manual-review acknowledgments;
-- Recording cleanup acknowledgment;
 - status-specific approval policy.
 
 Narrow DOCTOR finalization exception:
@@ -452,7 +412,7 @@ Narrow DOCTOR finalization exception:
 - the same result set contains `doctor.module_status=MANUAL_REVIEW`;
 - the reviewer has saved the required acknowledgment/note on that module-level manual-review result.
 
-This exception does not apply to DOCTOR transport/API/authentication/timeout/schema/collection errors, configuration errors, infrastructure errors, RabbitMQ errors, Recording errors, Portainer errors, or any unrelated `ERROR`.
+This exception does not apply to DOCTOR transport/API/authentication/timeout/schema/collection errors, configuration errors, infrastructure errors, RabbitMQ errors, Portainer errors, or any unrelated `ERROR`.
 
 FAIL:
 - explicit status policy blocks approval.
@@ -473,7 +433,7 @@ ERROR -> PASS
 
 Automated status and reviewer decision remain separate facts.
 
-## 10. Evidence
+## 9. Evidence
 
 ### `evidence.persistence`
 
@@ -490,7 +450,7 @@ ERROR:
 
 Raw evidence must be sanitized of known credentials/tokens.
 
-## 11. Application Access / CSRF
+## 10. Application Access / CSRF
 
 ### `security.application_access`
 
@@ -509,15 +469,12 @@ ERROR:
 
 The reviewer name is entered manually only during final confirmation and is not an access-control identity.
 
-## 12. Recovery
+## 11. Recovery
 
 ### `recovery.stale_worker`
 
-Non-Recording stale:
+Stale worker:
 - fail without replay.
-
-Recording stale/uncertain:
-- `RECOVERY_REQUIRED`.
 
 ### `recovery.manual_resolution`
 
@@ -528,7 +485,7 @@ PASS:
 ERROR:
 - unresolved/invalid recovery.
 
-## 13. Reporting
+## 12. Reporting
 
 ### `reporting.final_pdf_access`
 
@@ -549,7 +506,7 @@ PASS:
 ERROR:
 - completeness mismatch.
 
-## 14. Docker Runtime
+## 13. Docker Runtime
 
 ### `docker.runtime_secret_boundary`
 
@@ -581,7 +538,7 @@ ERROR/FAIL:
 Important:
 `compose.ci.yml` must not rebuild a different image.
 
-## 15. CI / Release Validation
+## 14. CI / Release Validation
 
 ### `ci.pre_image_quality`
 
@@ -690,7 +647,7 @@ PASS:
 FAIL:
 - production secret names/values are embedded where forbidden.
 
-## 16. Release Artifact
+## 15. Release Artifact
 
 Verified artifact contains:
 
@@ -701,3 +658,21 @@ image-id.txt
 ```
 
 The SHA-256 must be verified after offline transfer before loading/deployment.
+
+## Dynamic sites and parity results
+
+All independent Portainer, DOCTOR, RabbitMQ, and Infrastructure checks apply to each runtime
+site from `SITE_COUNT`. Single-site deployments omit parity entirely: no parity PASS, FAIL,
+ERROR, SKIPPED, or MANUAL_REVIEW result is emitted merely for non-applicability. They can
+be approved when actual checks and review requirements pass. Splunk and manual DB review
+remain independent of site count.
+
+With two or more sites, parity runs after independent checks. Portainer fields remain
+`service_presence`, `desired_replicas`, `running_replicas`, `healthy_replicas`, `image`, and
+`service_state`; DOCTOR uses `service_presence`. No RabbitMQ parity is added. Each field
+compares service/value maps across all sites. Equal or fully allowed differences PASS;
+unallowed mismatches FAIL under default policy; unavailable reliable data produces ERROR.
+Evidence includes all participating IDs, observed maps, and per-service differences.
+Independent health failures are never changed by parity, including identically unhealthy
+sites. DOCTOR technical failures block approval while unaffected sites are still checked.
+Explicit allowed-difference syntax and scope are documented in CONFIGURATION.md.

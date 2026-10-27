@@ -268,10 +268,13 @@ The framework supports the following module boundaries, but real environment ena
 
 - Portainer: read-only Docker Swarm service discovery, independent site health, and cross-site parity.
 - RabbitMQ: read-only Management API queue and node-health validation.
-- Infrastructure: read-only SSH/command collection for root-filesystem usage and Chrony/NTP state.
+- Infrastructure: read-only SSH runs `df -h | grep mapper` on every configured server in
+  every site. Every discovered mapper filesystem is checked independently; no device
+  inventory or `/` mount is required. Usage below 70% is PASS, >= 70% and < 80% is
+  WARNING, and >= 80% is FAIL. No matches (grep exit 1 with no diagnostics) is FAIL;
+  technical collection or parsing failures are ERROR. Chrony/NTP checks are unchanged.
 - DOCTOR: dynamic cross-site service validation and live Health Checks UI `doctor-api` collection are implemented.
 - Splunk: human dashboard review.
-- Recording: existing-device workflow and recovery policy are implemented, but live collection/control remains intentionally blocked.
 
 Do not enable any live integration until the required environment values, expected state, integration credentials, evidence policy, and status semantics are approved.
 
@@ -300,4 +303,37 @@ See:
 - `docs/RECOVERY_POLICY.md`
 - `docs/VALIDATION_CATALOG.md`
 
+## Dynamic runtime sites
 
+`SITE_COUNT=N` defines the runtime inventory, where N is any positive integer.
+One-site deployments and multi-site deployments use the same application. Define
+`SITE<N>_ID`, `SITE<N>_DISPLAY_NAME`, and `SITE<N>_PURPOSE` for each site from 1 through N.
+IDs must be non-empty and unique. Module-specific numbered ENV variables use the same
+number: for example, `DOCTOR_SITE3_API_URL` belongs to `SITE3_ID`.
+
+Every site receives independent Portainer, DOCTOR, RabbitMQ, and Infrastructure validation.
+Only when `SITE_COUNT > 1` does configured cross-site parity run afterward. A single-site
+run produces no parity result, blocking SKIPPED status, or parity evidence and can be
+approved once its actual checks and review requirements pass. Parity never overrides
+independent site health. Splunk and manual DB review remain independent of site count.
+
+The checked-in two-site examples remain valid. Add or remove numbered blocks in every
+module ENV file to match `SITE_COUNT`; no code change or fixed maximum inventory is needed.
+See [configuration patterns and allowed differences](docs/CONFIGURATION.md#dynamic-site-inventory-and-parity).
+
+
+### Infrastructure SSH credentials and host trust
+
+Infrastructure authenticates with username/password through Paramiko 5.0.1 and
+verifies servers against a pre-verified, read-only `known_hosts` file.
+
+```dotenv
+SSH_USERNAME=weekend_report
+SSH_PASSWORD=<secret>
+SSH_KNOWN_HOSTS_PATH=/app/secrets/known_hosts
+```
+
+Keep the real password in runtime `env/infrastructure.env` and never commit it.
+No SSH private key is required. Unknown/changed keys fail with ERROR; trust is never
+automatically enrolled. See [configuration](docs/CONFIGURATION.md#infrastructure-ssh-credentials-and-host-trust)
+and [deployment](docs/DEPLOYMENT.md#infrastructure-ssh-credentials-and-host-trust).

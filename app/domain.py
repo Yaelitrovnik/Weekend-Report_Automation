@@ -65,7 +65,6 @@ MODULES = [
     "portainer",
     "doctor",
     "rabbitmq",
-    "recording",
     "infrastructure",
     "splunk",
 ]

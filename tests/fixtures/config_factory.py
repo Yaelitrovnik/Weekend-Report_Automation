@@ -52,14 +52,8 @@ def valid_env() -> dict[str, str]:
         "RABBITMQ_SITE2_PASSWORD": "fixture-password-2",
         "RABBITMQ_SITE2_TLS_VERIFY": "true",
         "RABBITMQ_SITE2_CA_FILE": "",
-        "RECORDING_COLLECTION_MODE": "live",
-        "RECORDING_MANAGER_WEBAPP_URL": "https://recording-manager.example.invalid",
-        "RECORDING_SITE1_WEBAPP_URL": "https://recording-site1.example.invalid",
-        "RECORDING_SITE1_SERVER_REFERENCE": "srv1",
-        "RECORDING_SITE2_WEBAPP_URL": "https://recording-site2.example.invalid",
-        "RECORDING_SITE2_SERVER_REFERENCE": "srv2",
         "SSH_USERNAME": "fixture",
-        "SSH_PRIVATE_KEY_PATH": "/run/secrets/fixture-key",
+        "SSH_PASSWORD": "fake-ssh-password-for-tests-only",
         "SSH_KNOWN_HOSTS_PATH": "/run/secrets/fixture-known-hosts",
         "CHRONY_TIMEZONE": "UTC",
         "CHRONY_SOURCE": "fixture-ntp",
@@ -95,7 +89,6 @@ def fixture_env() -> dict[str, str]:
         {
             "PORTAINER_COLLECTION_MODE": "fixture",
             "RABBITMQ_COLLECTION_MODE": "fixture",
-            "RECORDING_COLLECTION_MODE": "fixture",
         }
     )
     return env
@@ -110,7 +103,6 @@ def load_fixture_config() -> dict:
     config["portainer_expected"]["fixture_actual"] = {"sites": copy.deepcopy(PORTAINER_SITES)}
     config["doctor"]["doctor"]["fixture_actual"] = {"sites": copy.deepcopy(DOCTOR_SITES)}
     config["rabbitmq_expected"]["fixture_actual"] = {"sites": copy.deepcopy(RABBITMQ_SITES)}
-    config["recording"]["fixture_actual"] = copy.deepcopy(RECORDING_ACTUAL)
     config["servers"]["fixture_actual"] = {"sites": copy.deepcopy(INFRASTRUCTURE_SITES)}
     return config
 
@@ -206,47 +198,12 @@ RABBITMQ_SITES = {
     },
 }
 
-RECORDING_ACTUAL = {
-    "selected_device": {
-        "id": "fixture-device-1",
-        "name": "Fixture Device",
-        "recording": False,
-        "created": False,
-        "deleted": False,
-    },
-    "device_selection": {"success": True},
-    "pre_start_verification": {"success": True, "recording": False},
-    "observations": {
-        "baseline": {
-            "site1_webapp": {"success": True, "count": 2},
-            "site2_webapp": {"success": True, "count": 3},
-            "site1_server": {"success": True, "count": 4},
-            "site2_server": {"success": True, "count": 5},
-        },
-        "after_start": {
-            "site1_webapp": {"success": True, "count": 3},
-            "site2_webapp": {"success": True, "count": 4},
-            "site1_server": {"success": True, "count": 5},
-            "site2_server": {"success": True, "count": 6},
-        },
-        "after_stop": {
-            "site1_webapp": {"success": True, "count": 2},
-            "site2_webapp": {"success": True, "count": 3},
-            "site1_server": {"success": True, "count": 4},
-            "site2_server": {"success": True, "count": 5},
-        },
-    },
-    "start_action": {"success": True, "device_id": "fixture-device-1"},
-    "stop_action": {"success": True, "device_id": "fixture-device-1"},
-    "cleanup": {"success": True, "complete": True, "selected_device_recording": False},
-}
-
 INFRASTRUCTURE_SITES = {
     "site1": {
         "servers": {
             "srv1": {
                 "reachable": True,
-                "df": "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 100G 20G 80G 20% /",
+                "df": "/dev/mapper/vg-root 100G 20G 80G 20% /",
                 "chrony": {
                     "synchronized": True,
                     "source": "fixture-ntp",
@@ -260,7 +217,7 @@ INFRASTRUCTURE_SITES = {
         "servers": {
             "srv2": {
                 "reachable": True,
-                "df": "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 100G 20G 80G 20% /",
+                "df": "/dev/mapper/vg-root 100G 20G 80G 20% /",
                 "chrony": {
                     "synchronized": True,
                     "source": "fixture-ntp",

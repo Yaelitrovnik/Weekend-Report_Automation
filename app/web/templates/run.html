@@ -32,7 +32,7 @@
         <div><dt>Worker</dt><dd>{{ run.worker_id or "Not recorded" }}</dd></div>
         <div><dt>Last heartbeat</dt><dd>{{ run.last_heartbeat or "Not recorded" }}</dd></div>
       </dl>
-      <p class="panel-copy">{{ recovery.get("operator_instructions", "Verify cleanup manually before resolving recovery. Do not replay Recording start/stop operations automatically.") }}</p>
+      <p class="panel-copy">{{ recovery.get("operator_instructions", "Verify the environment before resolving recovery. Do not replay uncertain operations automatically.") }}</p>
     </div>
     <div>
       <h3>Evidence</h3>

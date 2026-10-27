@@ -61,7 +61,6 @@ weekend-report/
     portainer.env
     doctor.env
     rabbitmq.env
-    recording.env
     infrastructure.env
     splunk.env
 
@@ -186,7 +185,6 @@ deploy/docker/env/app.env
 deploy/docker/env/portainer.env
 deploy/docker/env/doctor.env
 deploy/docker/env/rabbitmq.env
-deploy/docker/env/recording.env
 deploy/docker/env/infrastructure.env
 deploy/docker/env/splunk.env
 ```
@@ -283,7 +281,6 @@ python scripts/validate_config.py `
   --env-file deploy/docker/env/portainer.env `
   --env-file deploy/docker/env/doctor.env `
   --env-file deploy/docker/env/rabbitmq.env `
-  --env-file deploy/docker/env/recording.env `
   --env-file deploy/docker/env/infrastructure.env `
   --env-file deploy/docker/env/splunk.env
 ```
@@ -296,28 +293,13 @@ You can also run:
 
 The runtime server itself does not require Python for normal container operation.
 
-## 11. Current Production Blockers
+## 11. Production Readiness Checks
 
-Before building the final production image, decide what to do with these modules:
+Before building the final production image, complete the real runtime ENV files, provide required
+secret files, run configuration validation, and confirm the target environment can reach the enabled
+read-only integrations.
 
-```text
-DOCTOR
-  live API adapter is not implemented
-
-Recording
-  live collector is intentionally blocked
-```
-
-If these modules remain enabled/required in `rules.yml`, a complete production run cannot be treated
-as fully ready merely because all ENV files were populated.
-
-Production options are:
-
-1. implement and validate the missing contracts before building the final image; or
-2. explicitly disable/non-require unfinished modules in `rules.yml` through an approved policy
-   decision until their implementation is completed.
-
-Do not insert fake ENV values to bypass these blockers.
+Do not insert fake ENV values to bypass unresolved deployment values.
 
 ## 12. Build the Minimal Runtime Bundle
 
@@ -420,7 +402,7 @@ worker
 PostgreSQL uses persistent storage. Evidence also uses persistent storage.
 
 The worker is attached to a non-internal egress network so it can reach configured Portainer,
-RabbitMQ, SSH, DOCTOR, Recording, and other external integration endpoints.
+RabbitMQ, SSH, DOCTOR, and other automated external integration endpoints.
 
 The PostgreSQL backend network remains internal.
 
@@ -542,3 +524,85 @@ RUNTIME SERVER
 ```
 
 This is the supported target deployment model for the project.
+
+## Deploying one or multiple sites
+
+Set `SITE_COUNT` in `env/infrastructure.env` to any positive number. The two-site examples
+are samples, not a requirement. For N sites, configure identities, module endpoints, and
+server inventories numbered 1 through N across the ENV files. Remove blocks above N when
+reducing the inventory; stale or malformed numbered entries fail configuration loading.
+`DOCTOR_SITE<N>_API_URL` now supports the same inventory as Portainer, RabbitMQ, and SSH.
+The interactive `scripts/deployment/configure-infrastructure-env.ps1` helper prompts for
+the site count (defaulting to the existing count), site identities, and each site's server
+count. It writes the chosen inventory and reminds you to align the other module ENV files.
+See CONFIGURATION.md for the complete numbered-variable patterns and optional settings.
+
+Each configured infrastructure server in each site runs `df -h | grep mapper` over
+password authentication with strict known_hosts. Mapper discovery is dynamic: do not configure device names
+in ENV or require a `/` mount. The versioned `rules.yml` policy evaluates every mapper
+filesystem independently: < 70% PASS, >= 70% and < 80% WARNING, >= 80% FAIL.
+No matches (empty output or grep exit 1 without diagnostics) is FAIL; technical SSH,
+command, timeout, or parsing failures are ERROR. Review device, mountpoint, and usage
+in the existing per-site/server infrastructure results and evidence.
+
+Run configuration preflight after changing inventory and extend allowed-difference maps to
+all participating runtime IDs. One-site deployments run independent checks and can be
+approved without parity. Multi-site deployments run configured parity after independent
+health validation; a parity PASS cannot clear a health failure. Splunk, manual DB review,
+CSRF, strict known_hosts, and existing TLS requirements are unchanged.
+SSH uses username/password authentication.
+Collection is sequential, so account for additional endpoint/server latency when sizing
+worker resources and reviewing the existing stale-worker timeout policy.
+
+
+### Infrastructure SSH credentials and host trust
+
+Infrastructure uses username/password authentication through Paramiko 5.0.1.
+Username/password authenticates Weekend Report to the server; the pre-verified
+`known_hosts` file verifies the server's identity. Configure runtime
+`env/infrastructure.env` with:
+
+```dotenv
+SSH_USERNAME=weekend_report
+SSH_PASSWORD=<secret>
+SSH_KNOWN_HOSTS_PATH=/app/secrets/known_hosts
+```
+
+Never commit the real password or runtime ENV file. The configuration helper uses
+hidden secure input and quotes the password to prevent Compose interpolation.
+It rejects single quotes and line breaks; dollar signs, spaces, double quotes, and
+hash characters are preserved. Only `secrets/known_hosts` is needed for SSH,
+mounted read-only at `/app/secrets/known_hosts`; no SSH private key is required.
+Remove obsolete `SSH_PRIVATE_KEY_PATH` settings: the loader rejects their presence,
+including an empty value, without displaying their contents.
+
+Paramiko loads only the configured trust file and uses `RejectPolicy`, with agent
+and automatic key discovery disabled. Unknown or changed host keys and missing or
+unreadable trust files produce Infrastructure ERROR. Host keys are never enrolled
+or modified automatically. Non-default ports require `[hostname]:port` (or
+`[IP]:port`) entries. Verify host keys independently before replacing the trust file.
+Connection, banner, and authentication timeouts are configured; the command deadline
+also bounds channel opening, exec acknowledgement, and draining both output streams.
+Fixed error categories and output redaction keep credentials out of evidence,
+logs, UI, and PDF results. Configuration hashing redacts password values.
+
+Mapper collection remains exactly `df -h | grep mapper`: every returned mapper is
+validated independently (<70% PASS, 70–79% WARNING, >=80% FAIL). No mapper match is
+FAIL; SSH or technical command failures are ERROR. Chrony validation is unchanged.
+
+
+Rebuild and transfer both the runtime-base and CI images after this dependency
+change. Paramiko is pinned in both requirements files and installed with its
+dependencies during the existing connected image preparation step. Regenerate the
+CI image's baked dependency audit and requirements hash when rebuilding it.
+The development requirements also pin `types-paramiko==5.0.0.20261006` for mypy.
+The application Dockerfile checks the Paramiko version so an old runtime base fails
+the offline build. No package retrieval is added to application builds or container
+startup; after `docker load`, the final image already contains the SSH dependencies.
+The existing OpenSSH client remains available for operator tooling.
+
+
+Paramiko 5.0.1 excludes legacy SHA-1 SSH algorithms. Servers must offer supported
+modern algorithms; do not re-enable obsolete algorithms to work around a failure.
+RSA public-key entries can still use the normal `ssh-rsa` known_hosts file format
+when the server negotiates RSA-SHA2 signatures.

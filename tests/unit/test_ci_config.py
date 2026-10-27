@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
+
+from scripts.ci import _ci_env
+from tests.fixtures.config_factory import valid_env
 
 
 class CIConfigTests(unittest.TestCase):
@@ -16,6 +21,14 @@ class CIConfigTests(unittest.TestCase):
         self.ci_compose = Path("deploy/docker/compose.ci.yml")
         self.github_scripts = Path(".github/scripts")
         self.gitlab_scripts = Path(".gitlab-ci-cd/scripts")
+
+    def test_ci_env_removes_obsolete_ssh_private_key_path(self):
+        for value in ("/obsolete/key", ""):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {"SSH_PRIVATE_KEY_PATH": value}):
+                    env = _ci_env(valid_env())
+
+                self.assertNotIn("SSH_PRIVATE_KEY_PATH", env)
 
     def test_ci_yaml_files_parse(self):
         for path in (
@@ -274,7 +287,7 @@ class CIConfigTests(unittest.TestCase):
             "PORTAINER_SITE2_TOKEN",
             "RABBITMQ_SITE1_PASSWORD",
             "RABBITMQ_SITE2_PASSWORD",
-            "SSH_PRIVATE_KEY_PATH",
+            "SSH_PASSWORD",
         ):
             self.assertNotIn(forbidden, combined)
 

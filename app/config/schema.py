@@ -15,7 +15,6 @@ VALID_MODULES = {
     "portainer",
     "doctor",
     "rabbitmq",
-    "recording",
     "infrastructure",
     "splunk",
 }
@@ -27,10 +26,7 @@ DOCTOR_MANUAL_REVIEW_TRIGGERS = {"any_unhealthy"}
 RABBITMQ_SUPPORTED_COLLECTION_MODES = {"fixture", "live"}
 RABBITMQ_SUPPORTED_SCOPES = {"all"}
 RABBITMQ_HEALTH_STATES = {"green"}
-RECORDING_SUPPORTED_COLLECTION_MODES = {"fixture", "live"}
-RECORDING_SUPPORTED_WORKFLOWS = {"existing_device_start_stop"}
-RECORDING_INITIAL_STATES = {"not_recording"}
-SSH_SUPPORTED_AUTH_TYPES = {"private_key", "fixture"}
+SSH_SUPPORTED_AUTH_TYPES = {"password", "fixture"}
 SSH_SUPPORTED_HOST_KEY_POLICIES = {"strict", "fixture"}
 
 NOT_APPLICABLE_ALLOWED_PATH_PARTS = {

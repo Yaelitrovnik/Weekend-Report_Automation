@@ -43,11 +43,35 @@
   <p class="inline-status" data-review-status aria-live="polite"></p>
 </section>
 
+<section class="panel">
+  <div class="panel-heading"><h2>Independent Site Status</h2></div>
+  <div class="comparison-grid">
+    {% for site in module_site_summaries %}
+      <div class="comparison-site">
+        <strong>{{ site.label }}</strong>
+        {{ ui.status_badge(site.status) }}
+        <p>{{ site.result_count }} recorded checks</p>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if module_parity_results %}
+<section class="panel" data-cross-site-parity>
+  <div class="panel-heading"><h2>Cross-Site Parity</h2></div>
+  <div class="result-stack">
+    {% for result in module_parity_results %}
+      {{ ui.result_card(result, run.run_id, true) }}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if module == "portainer" and portainer_services %}
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <p class="eyebrow">Two-Site Comparison</p>
+      <p class="eyebrow">Site Health</p>
       <h2>Portainer Services</h2>
     </div>
   </div>
@@ -61,7 +85,6 @@
           </div>
           <div class="service-badges">
             {{ ui.status_badge(service.status) }}
-            <span class="parity-pill">Parity {{ ui.status_badge(service.parity_status) }}</span>
           </div>
         </div>
         <div class="comparison-grid">
@@ -175,62 +198,13 @@
   {% endfor %}
 </section>
 
-{% elif module == "recording" and recording_workflows %}
-<section class="section-stack">
-  {% for workflow in recording_workflows %}
-    <article class="panel status-left status-left-{{ workflow.status|lower|replace('_', '-') }}">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Existing-Device Workflow</p>
-          <h2>{{ workflow.label }}</h2>
-        </div>
-        {{ ui.status_badge(workflow.status) }}
-      </div>
-      <div class="workflow-steps">
-        {% for step in workflow.steps %}
-          <div class="workflow-step status-left status-left-{{ step.status|lower|replace('_', '-') }}">
-            <div class="workflow-step-head">
-              <strong>{{ step.label }}</strong>
-              {{ ui.status_badge(step.status) }}
-            </div>
-            {% if step.results %}
-              <p>{{ step.results[0].message }}</p>
-              {{ ui.evidence_links(step.results[0].evidence) }}
-              <details class="technical-details">
-                <summary>Step details</summary>
-                <div class="result-stack">
-                  {% for result in step.results %}
-                    {{ ui.result_card(result, run.run_id, true) }}
-                  {% endfor %}
-                </div>
-              </details>
-            {% else %}
-              <p class="muted">No result recorded for this step.</p>
-            {% endif %}
-          </div>
-        {% endfor %}
-      </div>
-      {% if workflow.remaining %}
-        <details class="collapsible">
-          <summary>Additional Recording checks</summary>
-          <div class="result-stack">
-            {% for result in workflow.remaining %}
-              {{ ui.result_card(result, run.run_id, true) }}
-            {% endfor %}
-          </div>
-        </details>
-      {% endif %}
-    </article>
-  {% endfor %}
-</section>
-
 {% elif module == "infrastructure" and infrastructure_servers %}
 <section class="section-stack">
   {% for server in infrastructure_servers %}
     <article class="panel status-left status-left-{{ server.status|lower|replace('_', '-') }}">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">Server</p>
+          <p class="eyebrow">{{ server.site_label }} / Server</p>
           <h2>{{ server.server }}</h2>
         </div>
         {{ ui.status_badge(server.status) }}

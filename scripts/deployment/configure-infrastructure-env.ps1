@@ -154,22 +154,41 @@ Write-Host ""
 Write-Host "Weekend Report - Infrastructure configuration"
 Write-Host "============================================="
 Write-Host ""
-Write-Host "This config supports any positive number of servers per site."
-Write-Host "The root filesystem check and SSH/Chrony thresholds remain in rules.yml."
+Write-Host "This config supports any positive number of sites and servers per site."
+Write-Host "Dynamic mapper filesystem checks and SSH/Chrony thresholds remain in rules.yml."
 Write-Host ""
 
-$site1Id = Get-ExistingEnvValue $EnvPath "SITE1_ID" "site1"
-$site2Id = Get-ExistingEnvValue $EnvPath "SITE2_ID" "site2"
-
-$site1DisplayName = Read-WithDefault "Site 1 display name" "Site 1"
-$site2DisplayName = Read-WithDefault "Site 2 display name" "Site 2"
+$existingCount = Get-ExistingEnvValue $EnvPath "SITE_COUNT" "2"
+$defaultSiteCount = 2
+if (-not [int]::TryParse($existingCount, [ref]$defaultSiteCount) -or $defaultSiteCount -lt 1) {
+    $defaultSiteCount = 2
+}
+$siteCount = Read-PositiveInt "Number of runtime sites" $defaultSiteCount
+$siteDefinitions = New-Object 'System.Collections.Generic.List[string]'
+$siteIds = New-Object 'System.Collections.Generic.HashSet[string]'
+for ($siteNumber = 1; $siteNumber -le $siteCount; $siteNumber++) {
+    $defaultId = Get-ExistingEnvValue $EnvPath "SITE${siteNumber}_ID" "site$siteNumber"
+    do {
+        $siteId = Read-WithDefault "Site $siteNumber ID (unique stable name)" $defaultId
+        $unique = $siteIds.Add($siteId)
+        if (-not $unique) { Write-Host "Site IDs must be unique." }
+    } while (-not $unique)
+    $defaultName = Get-ExistingEnvValue $EnvPath "SITE${siteNumber}_DISPLAY_NAME" "Site $siteNumber"
+    $displayName = Read-WithDefault "Site $siteNumber display name" $defaultName
+    $defaultPurpose = Get-ExistingEnvValue $EnvPath "SITE${siteNumber}_PURPOSE" "weekend_report_site"
+    $purpose = Read-WithDefault "Site $siteNumber purpose" $defaultPurpose
+    $siteDefinitions.Add("")
+    $siteDefinitions.Add("SITE${siteNumber}_ID=$siteId")
+    $siteDefinitions.Add("SITE${siteNumber}_DISPLAY_NAME=$displayName")
+    $siteDefinitions.Add("SITE${siteNumber}_PURPOSE=$purpose")
+}
 $sshUsername = Read-RequiredValue "SSH username used on the infrastructure servers"
 
 Write-Host ""
-Write-Host "Select the SSH private key used by Weekend Report."
-$privateKeyContainerPath = Copy-SecretFile `
-    "Windows path to the SSH private key" `
-    "ssh_private_key"
+do {
+    $sshPassword = Read-Host "SSH password (secret; input is hidden)" -AsSecureString
+    if ($sshPassword.Length -eq 0) { Write-Host "Password is required." }
+} while ($sshPassword.Length -eq 0)
 
 Write-Host ""
 Write-Host "Select the pre-verified OpenSSH known_hosts file."
@@ -187,43 +206,63 @@ Write-Host ""
 $chronyTimezone = Read-RequiredValue "Default expected timezone"
 $chronySource = Read-RequiredValue "Default expected selected Chrony source"
 
-$site1Count = Read-PositiveInt "Number of infrastructure servers in Site 1" 1
-$site2Count = Read-PositiveInt "Number of infrastructure servers in Site 2" 1
-
 $lines = New-Object 'System.Collections.Generic.List[string]'
-$lines.Add("# Site definitions, SSH identity paths, and dynamic server inventories.")
+$lines.Add("# Runtime SSH password is secret. Do not commit this file.")
 $lines.Add("")
-$lines.Add("SITE_COUNT=2")
-$lines.Add("")
-$lines.Add("SITE1_ID=$site1Id")
-$lines.Add("SITE1_DISPLAY_NAME=$site1DisplayName")
-$lines.Add("SITE1_PURPOSE=weekend_report_site")
-$lines.Add("")
-$lines.Add("SITE2_ID=$site2Id")
-$lines.Add("SITE2_DISPLAY_NAME=$site2DisplayName")
-$lines.Add("SITE2_PURPOSE=weekend_report_site")
+$lines.Add("SITE_COUNT=$siteCount")
+$lines.AddRange($siteDefinitions)
 $lines.Add("")
 $lines.Add("SSH_USERNAME=$sshUsername")
-$lines.Add("SSH_PRIVATE_KEY_PATH=$privateKeyContainerPath")
+
 $lines.Add("SSH_KNOWN_HOSTS_PATH=$knownHostsContainerPath")
 $lines.Add("")
 $lines.Add("CHRONY_TIMEZONE=$chronyTimezone")
 $lines.Add("CHRONY_SOURCE=$chronySource")
 
-Add-ServerInventory $lines 1 $site1Count $chronyTimezone $chronySource
-Add-ServerInventory $lines 2 $site2Count $chronyTimezone $chronySource
+for ($siteNumber = 1; $siteNumber -le $siteCount; $siteNumber++) {
+    $serverCount = Read-PositiveInt "Number of infrastructure servers in Site $siteNumber" 1
+    Add-ServerInventory $lines $siteNumber $serverCount $chronyTimezone $chronySource
+}
 
-[System.IO.File]::WriteAllLines(
-    (Resolve-Path $EnvPath),
-    $lines,
-    (New-Object System.Text.UTF8Encoding($false))
-)
+# Convert only when ready to write. Single quotes prevent Compose interpolation.
+# The shared ENV parser preserves the contents of these quotes exactly.
+$passwordPointer = [IntPtr]::Zero
+try {
+    $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sshPassword)
+    $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+    if (
+        [string]::IsNullOrWhiteSpace($plainPassword) -or
+        $plainPassword.Trim() -match '^<.*>$' -or
+        $plainPassword.Trim() -eq 'UNKNOWN' -or
+        $plainPassword.IndexOfAny([char[]]"'`r`n") -ge 0
+    ) {
+        throw "Password must be resolved and cannot contain single quotes or line breaks."
+    }
+    $lines.Add("SSH_PASSWORD='$plainPassword'")
+    [System.IO.File]::WriteAllLines(
+        (Resolve-Path $EnvPath),
+        $lines,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+} catch {
+    # Never render an exception containing the secret-bearing write arguments.
+    throw "Could not write infrastructure ENV. Check password format and file permissions."
+} finally {
+    if ($passwordPointer -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+    }
+    $plainPassword = $null
+    $lines.Clear()
+    $sshPassword.Dispose()
+}
 
 Write-Host ""
 Write-Host "Infrastructure ENV configuration completed."
-Write-Host "Runtime SSH files were copied to deploy/docker/secrets/."
+Write-Host "Ensure Portainer, DOCTOR, and RabbitMQ ENV blocks also cover sites 1 through $siteCount."
+Write-Host "Remove module site blocks above SITE_COUNT, then run configuration preflight."
+Write-Host "Pre-verified known_hosts was copied to deploy/docker/secrets/known_hosts."
 Write-Host "The ENV file uses container paths under /app/secrets."
-Write-Host "No private-key contents were displayed."
+Write-Host "SSH password was saved without displaying it. Never commit infrastructure.env."
 Write-Host ""
 Write-Host "IMPORTANT for the final Linux deployment: verify that the container user can read"
-Write-Host "the private key while the key still has restrictive OpenSSH permissions."
+Write-Host "known_hosts. Restrict access to env/infrastructure.env; no SSH private key is needed."

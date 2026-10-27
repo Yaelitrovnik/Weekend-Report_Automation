@@ -11,10 +11,6 @@ modules:
     enabled: true
     required: true
     if_unavailable_status: ERROR
-  recording:
-    enabled: true
-    required: true
-    if_unavailable_status: ERROR
   infrastructure:
     enabled: true
     required: true
@@ -31,6 +27,9 @@ aggregation:
   skipped_blocks: true
   warning_overall_status: WARNING
 
+# Applied after independent validation only when SITE_COUNT > 1.
+# Runtime site IDs come from ENV. Allowed differences must cover all participating IDs;
+# target exceptions cover only that service. See docs/CONFIGURATION.md for examples.
 parity:
   - enabled: true
     module: portainer
@@ -107,50 +106,15 @@ rabbitmq:
       disk_space: green
     unhealthy_status: ERROR
 
-recording:
-  workflow: existing_device_start_stop
-  safety:
-    create_device_allowed: false
-    delete_device_allowed: false
-    state_changing_calls_require_explicit_approval: true
-    crash_after_start_requires_recovery: true
-    automatic_replay_after_unknown_state: false
-  manager:
-    device_selection:
-      use_existing_device_only: true
-      required_initial_state: not_recording
-      no_eligible_device_status: ERROR
-  validation:
-    baseline:
-      capture_at_test_start: true
-    after_start:
-      site1_webapp_count_delta: 1
-      site2_webapp_count_delta: 1
-      site1_server_count_delta: 1
-      site2_server_count_delta: 1
-    after_stop:
-      site1_webapp_must_return_to_baseline: true
-      site2_webapp_must_return_to_baseline: true
-      site1_server_must_return_to_baseline: true
-      site2_server_must_return_to_baseline: true
-  polling:
-    timeout_seconds: 120
-    interval_seconds: 5
-  result_policy:
-    functional_mismatch_status: FAIL
-    technical_failure_status: ERROR
-    cleanup_failure_status: ERROR
-    cleanup_failure_requires_recovery: true
-
 infrastructure:
   ssh:
-    auth: private_key
+    auth: password
     host_key_policy: strict
     connect_timeout: 5
     command_timeout: 5
   filesystem:
-    path: /
-    command: df -h /
+    match: mapper
+    command: df -h | grep mapper
     warning_percent: 70
     critical_percent: 80
     required: true
@@ -173,13 +137,11 @@ review:
     - portainer
     - doctor
     - rabbitmq
-    - recording
     - infrastructure
     - splunk
   result_note_required_statuses:
     - MANUAL_REVIEW
   manual_review_acknowledgment_required: true
-  recording_cleanup_acknowledgment_required: true
   reject_allowed: true
   approval_status_policy:
     WARNING: REQUIRE_NOTE

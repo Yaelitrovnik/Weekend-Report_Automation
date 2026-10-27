@@ -45,7 +45,7 @@ class ValidatorTests(unittest.TestCase):
         config = load_fixture_config()
         actual = copy.deepcopy(config["servers"]["fixture_actual"])
         actual["sites"]["site1"]["servers"]["srv1"]["df"] = (
-            "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 100G 75G 25G 75% /"
+            "/dev/mapper/vg-root 100G 75G 25G 75% /"
         )
         actual["sites"]["site2"]["servers"]["srv2"]["chrony"]["synchronized"] = False
         results = InfrastructureValidator().validate(actual, config, self.context(config))

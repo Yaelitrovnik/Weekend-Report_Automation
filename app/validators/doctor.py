@@ -52,23 +52,17 @@ class DoctorValidator(Validator):
                 )
             )
 
-        if results:
-            results.append(
-                _module_result(context.run_id, doctor_config, actual, CheckStatus.ERROR, started)
-            )
-            return results
-
         validation = doctor_config.get("validation", {})
         sites = actual.get("sites", {})
         runtime_sites = _runtime_site_ids(config)
-        if not isinstance(sites, dict) or not sites or len(runtime_sites) != 2:
+        if not isinstance(sites, dict) or not runtime_sites:
             results.append(
                 _result(
                     context.run_id,
                     "collection",
                     None,
                     "doctor",
-                    {"runtime_sites": runtime_sites, "site_count": 2},
+                    {"runtime_sites": runtime_sites, "minimum_site_count": 1},
                     actual,
                     CheckStatus.ERROR,
                     "DOCTOR API collection did not return reliable site data",
@@ -81,7 +75,10 @@ class DoctorValidator(Validator):
             )
             return results
 
+        error_sites = {error.get("site") for error in actual.get("errors") or []}
         for site in runtime_sites:
+            if site in error_sites:
+                continue
             site_actual = sites.get(site)
             if not isinstance(site_actual, dict):
                 results.append(

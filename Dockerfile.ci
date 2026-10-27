@@ -60,7 +60,7 @@ RUN test -s /usr/local/share/weekend-report-ci/requirements.sha256 \
     && test -s /usr/local/share/weekend-report-ci/pip-audit.json \
     && test -s /usr/local/share/weekend-report-ci/pip-audit-passed-at
 
-RUN python -c "import fastapi, starlette, uvicorn, jinja2, httpx, yaml, psycopg"
+RUN python -c "import fastapi, starlette, uvicorn, jinja2, httpx, yaml, psycopg, paramiko"
 
 RUN python --version \
     && ruff --version \

@@ -3,7 +3,6 @@ x-weekend-env-files: &weekend_env_files
   - ./env/portainer.env
   - ./env/doctor.env
   - ./env/rabbitmq.env
-  - ./env/recording.env
   - ./env/infrastructure.env
   - ./env/splunk.env
 

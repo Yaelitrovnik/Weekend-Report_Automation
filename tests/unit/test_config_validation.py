@@ -35,10 +35,6 @@ class ConfigValidationTests(unittest.TestCase):
             config["rabbitmq_expected"]["connections"]["site2"]["user"],
             "fixture-user-2",
         )
-        self.assertEqual(
-            config["recording"]["manager"]["url"],
-            "https://recording-manager.example.invalid",
-        )
 
     def test_fixture_config_is_valid(self):
         report = validate_config(load_fixture_config(), production_preflight=False)
@@ -171,8 +167,8 @@ class ConfigValidationTests(unittest.TestCase):
             server["filesystems"],
             [
                 {
-                    "path": "/",
-                    "command": "df -h /",
+                    "match": "mapper",
+                    "command": "df -h | grep mapper",
                     "warning_percent": 70,
                     "critical_percent": 80,
                     "required": True,
@@ -185,19 +181,19 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertEqual(server["chrony"][0]["critical_offset"], 1.0)
         self.assertNotIn("nfs_mounts", server)
 
-    def test_infrastructure_uses_strict_private_key_ssh(self):
+    def test_infrastructure_uses_strict_password_ssh(self):
         config = load_valid_config()
         self.assertEqual(
             config["servers"]["ssh"]["auth"],
-            "private_key",
+            "password",
         )
         self.assertEqual(
             config["servers"]["ssh"]["host_key_policy"],
             "strict",
         )
         self.assertEqual(
-            config["servers"]["ssh"]["private_key_path"],
-            "/run/secrets/fixture-key",
+            config["servers"]["ssh"]["password"],
+            "fake-ssh-password-for-tests-only",
         )
         self.assertEqual(
             config["servers"]["ssh"]["known_hosts_path"],

@@ -16,7 +16,7 @@ scripts/ci.py
 
 The CI platforms orchestrate the same local commands. They do not contain a second implementation of Weekend Report business logic.
 
-The operational Weekend Report remains manually triggered from FastAPI. CI never starts a real production Weekend Report and never performs a real state-changing Recording action.
+The operational Weekend Report remains manually triggered from FastAPI. CI never starts a real production Weekend Report.
 
 ## 2. Current Python / Container Baseline
 
@@ -575,7 +575,6 @@ Standard CI must not receive:
 - production SSH private keys;
 - production DB validation credentials;
 - DOCTOR credentials;
-- Recording credentials;
 - production evidence.
 
 CI uses fixture configuration and disposable infrastructure only.
@@ -641,3 +640,17 @@ Verified locally during the Python 3.14 migration:
 A hosted GitHub quality run also passed before the final TAG-file release-trigger refactor. The first hosted pre-image run after adding the TAG-only regression test correctly detected remaining legacy `CI_COMMIT_TAG` logic in the GitLab image definition. After correcting that definition, run GitHub Actions again before claiming the final TAG-only refactor is hosted-verified.
 
 Actual GitLab Runner execution must still be verified after the project is imported to GitLab.
+
+## Dynamic-site regression coverage
+
+The unit gate covers valid one-, two-, three-, and five-site configurations, dynamic module
+collection, arbitrary runtime IDs, malformed/out-of-range numbered ENV, missing required
+values, duplicate IDs, and unknown allowed-difference references. Parity tests cover N-site
+matches, missing services, image differences, DOCTOR service-set differences, scoped
+exceptions, unavailable data, and independent unhealthy sites that remain unhealthy.
+
+The integration gate exercises rendered pages for one/two/three sites, unsupported module
+404s, site-scoped server cards, real parity display, single-site parity omission including
+evidence, and approval/PDF generation with existing Splunk/manual DB/note requirements.
+The CI Compose input remains a legitimate two-site example. Existing quality gates and
+PostgreSQL concurrency requirements are unchanged.

@@ -310,12 +310,8 @@ class Repository:
         now = iso_now()
         with self.transaction():
             for run in stale:
-                if run.current_module == "recording":
-                    state = RunState.RECOVERY_REQUIRED
-                    message = "stale worker during Recording; manual cleanup/recovery required"
-                else:
-                    state = RunState.FAILED
-                    message = f"stale worker detected by {worker_id}; run failed without replay"
+                state = RunState.FAILED
+                message = f"stale worker detected by {worker_id}; run failed without replay"
                 self._execute(
                     """
                     UPDATE runs
@@ -346,7 +342,7 @@ class Repository:
             raise InvalidRunTransition(f"run must be RECOVERY_REQUIRED, got {run.state}")
         message = (
             "manual recovery resolved by "
-            f"{reviewer}; no Recording replay performed; resolution note: {note.strip()}"
+            f"{reviewer}; no automatic replay performed; resolution note: {note.strip()}"
         )
         now = iso_now()
         with self.transaction():

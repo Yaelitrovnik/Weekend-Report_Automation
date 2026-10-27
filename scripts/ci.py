@@ -69,14 +69,6 @@ COMPOSE_ENV_FILE_KEYS = {
         "RABBITMQ_SITE2_TLS_VERIFY",
         "RABBITMQ_SITE2_CA_FILE",
     ],
-    "recording.env": [
-        "RECORDING_COLLECTION_MODE",
-        "RECORDING_MANAGER_WEBAPP_URL",
-        "RECORDING_SITE1_WEBAPP_URL",
-        "RECORDING_SITE1_SERVER_REFERENCE",
-        "RECORDING_SITE2_WEBAPP_URL",
-        "RECORDING_SITE2_SERVER_REFERENCE",
-    ],
     "infrastructure.env": [
         "SITE_COUNT",
         "SITE1_ID",
@@ -86,7 +78,7 @@ COMPOSE_ENV_FILE_KEYS = {
         "SITE2_DISPLAY_NAME",
         "SITE2_PURPOSE",
         "SSH_USERNAME",
-        "SSH_PRIVATE_KEY_PATH",
+        "SSH_PASSWORD",
         "SSH_KNOWN_HOSTS_PATH",
         "CHRONY_TIMEZONE",
         "CHRONY_SOURCE",
@@ -143,6 +135,10 @@ def _python_module(module: str, *args: str) -> list[str]:
 
 def _ci_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
+
+    # Do not allow obsolete host/runner SSH configuration to contaminate
+    # the deterministic CI fixture environment.
+    env.pop("SSH_PRIVATE_KEY_PATH", None)
     defaults = {
         "POSTGRES_PASSWORD": "ci-only-postgres-password",
         "WEEKEND_REPORT_IMAGE": "weekend-report:ci-validation",
@@ -285,8 +281,8 @@ def gate_audit() -> None:
 def gate_compose_config() -> None:
     env = _ci_env()
     with _temporary_compose_env_files():
-        _run(["docker", "compose", "-f", str(COMPOSE_FILE), "config"], env=env)
-        _run(["docker", "compose", "-f", str(CI_COMPOSE_FILE), "config"], env=env)
+        _run(["docker", "compose", "-f", str(COMPOSE_FILE), "config", "--quiet"], env=env)
+        _run(["docker", "compose", "-f", str(CI_COMPOSE_FILE), "config", "--quiet"], env=env)
 
 
 def _wait_for_health(

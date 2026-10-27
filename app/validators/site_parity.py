@@ -36,18 +36,21 @@ class SiteParityValidator:
             if result.site:
                 by_module_site[(result.module, result.site)].append(result)
 
+        sites = _runtime_site_ids(config)
+        if len(sites) == 1:
+            return []
+
         for rule in parity:
             if not rule.get("enabled", False):
                 continue
 
             module = rule.get("module")
             fields = rule.get("fields") or [rule.get("field")]
-            sites = _runtime_site_ids(config)
 
             if (
                 not isinstance(module, str)
                 or "sites" in rule
-                or len(sites) != 2
+                or not sites
             ):
                 results.append(
                     CheckResult(
@@ -60,7 +63,7 @@ class SiteParityValidator:
                         target=str(module or "unknown"),
                         expected={
                             "site_source": "runtime SITE_COUNT/SITE*_ID",
-                            "site_count": 2,
+                            "minimum_site_count": 1,
                         },
                         actual={
                             "comparable": False,
@@ -80,26 +83,17 @@ class SiteParityValidator:
             if not any(result.module == module for result in observed_results):
                 continue
 
-            site1, site2 = sites
-
             for field in [field for field in fields if isinstance(field, str) and field]:
-                value1, available1 = _extract(
-                    by_module_site.get((module, site1), []),
-                    module,
-                    field,
-                )
-                value2, available2 = _extract(
-                    by_module_site.get((module, site2), []),
-                    module,
-                    field,
-                )
+                extracted = {
+                    site: _extract(by_module_site.get((module, site), []), module, field)
+                    for site in sites
+                }
+                values = {site: value for site, (value, _) in extracted.items()}
+                missing_sites = [
+                    site for site, (_, available) in extracted.items() if not available
+                ]
 
-                if not available1 or not available2:
-                    missing_sites = [
-                        site
-                        for site, available in [(site1, available1), (site2, available2)]
-                        if not available
-                    ]
+                if missing_sites:
                     results.append(
                         CheckResult(
                             context.run_id,
@@ -109,12 +103,12 @@ class SiteParityValidator:
                             "parity comparison unavailable because reliable site data is missing",
                             site=None,
                             target=f"{module}.{field}",
-                            expected={"sites": [site1, site2], "field": field},
+                            expected={"sites": sites, "field": field},
                             actual={
                                 "match": None,
                                 "comparable": False,
                                 "missing_sites": missing_sites,
-                                "values": {site1: value1, site2: value2},
+                                "values": values,
                             },
                             started_at=started,
                             finished_at=iso_now(),
@@ -122,18 +116,18 @@ class SiteParityValidator:
                                 "parity_only": True,
                                 "module": module,
                                 "field": field,
-                                "sites": [site1, site2],
+                                "sites": sites,
                                 "error_code": "PARITY_DATA_UNAVAILABLE",
                             },
                         )
                     )
                     continue
 
-                match = value1 == value2
+                match = all(value == values[sites[0]] for value in values.values())
                 allowed = (
                     False
                     if match
-                    else _allowed_difference(rule, field, site1, site2, value1, value2)
+                    else _allowed_difference(rule, field, values)
                 )
 
                 if match or allowed:
@@ -161,13 +155,15 @@ class SiteParityValidator:
                         message,
                         site=None,
                         target=f"{module}.{field}",
-                        expected={site1: value1, site2: value2},
+                        expected=values,
                         actual={
                             "match": match,
+                            "values": values,
+                            "mismatches": _mismatches(values),
                             "comparable": True,
                             "allowed_difference": allowed,
                             "field": field,
-                            "sites": [site1, site2],
+                            "sites": sites,
                         },
                         started_at=started,
                         finished_at=iso_now(),
@@ -175,7 +171,7 @@ class SiteParityValidator:
                             "parity_only": True,
                             "module": module,
                             "field": field,
-                            "sites": [site1, site2],
+                            "sites": sites,
                             "allowed_difference": allowed,
                         },
                     )
@@ -212,7 +208,7 @@ def _extract(
 
     Parity must compare observed state only. It must never fall back to
     configured expected values, because that can create a false parity PASS
-    when collection failed on both sites.
+    when collection failed on any site.
     """
 
     check_id = FIELD_CHECK_IDS.get(module, {}).get(field)
@@ -220,18 +216,26 @@ def _extract(
         return {}, False
 
     values: dict[str, Any] = {}
+    reliable = True
     for result in results:
+        if result.status == CheckStatus.ERROR and result.check_id in {
+            f"{module}.collection", f"{module}.discovery", f"{module}.service",
+        }:
+            reliable = False
         if result.check_id != check_id:
             continue
         if result.status == CheckStatus.ERROR:
+            reliable = False
             continue
 
         target = result.target or result.check_id
         value = _field_value(result, field)
         if value is not None:
             values[str(target)] = value
+        else:
+            reliable = False
 
-    return dict(sorted(values.items())), bool(values)
+    return dict(sorted(values.items())), reliable and bool(values)
 
 
 def _field_value(result: CheckResult, field: str) -> Any:
@@ -242,31 +246,38 @@ def _field_value(result: CheckResult, field: str) -> Any:
     return result.actual.get(field)
 
 
+def _mismatches(values: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    targets = sorted({target for value in values.values() for target in value})
+    mismatches = {}
+    for target in targets:
+        observed = {
+            site: {"present": target in value, "value": value.get(target)}
+            for site, value in values.items()
+        }
+        first = next(iter(observed.values()))
+        if any(value != first for value in observed.values()):
+            mismatches[target] = observed
+    return mismatches
+
+
 def _allowed_difference(
     rule: dict[str, Any],
     field: str,
-    site1: str,
-    site2: str,
-    value1: dict[str, Any],
-    value2: dict[str, Any],
+    values: dict[str, dict[str, Any]],
 ) -> bool:
+    allowed_targets: set[str] = set()
     for item in rule.get("allowed_differences", []):
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or item.get("field", field) != field:
             continue
-        if item.get("field", field) != field:
+        site_values = item.get("site_values")
+        if not isinstance(site_values, dict) or set(site_values) != set(values):
             continue
         target = item.get("target")
         if target:
-            if value1.get(target) == item.get("site_values", {}).get(site1) and value2.get(
-                target
-            ) == item.get("site_values", {}).get(site2):
-                return True
-            continue
-        site_values = item.get("site_values")
-        if (
-            isinstance(site_values, dict)
-            and value1 == site_values.get(site1)
-            and value2 == site_values.get(site2)
-        ):
+            # An exception for one service cannot excuse differences in another.
+            # null explicitly permits an absent target on a particular site.
+            if all(value.get(target) == site_values[site] for site, value in values.items()):
+                allowed_targets.add(target)
+        elif all(value == site_values[site] for site, value in values.items()):
             return True
-    return False
+    return set(_mismatches(values)).issubset(allowed_targets)

@@ -9,21 +9,26 @@ from app.time_utils import iso_now
 from app.validators.base import Validator
 from app.validators.engine import threshold_status
 
-DF_RE = re.compile(r"^(?P<fs>\S+)\s+\S+\s+\S+\s+\S+\s+(?P<use>\d+)%\s+(?P<mount>\S+)")
+DF_RE = re.compile(
+    r"(?P<fs>\S+)\s+\S+\s+\S+\s+\S+\s+(?P<use>\d+)%\s+(?P<mount>/[^\r\n]*)"
+)
 
 
 def parse_df(text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        match = DF_RE.match(line.strip())
-        if match:
-            rows.append(
-                {
-                    "filesystem": match.group("fs"),
-                    "utilization_percent": int(match.group("use")),
-                    "mountpoint": match.group("mount"),
-                }
-            )
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        match = DF_RE.fullmatch(line.strip())
+        if match is None or "mapper" not in match.group("fs"):
+            raise ValueError(f"unparseable mapper filesystem output at line {line_number}")
+        rows.append(
+            {
+                "filesystem": match.group("fs"),
+                "utilization_percent": int(match.group("use")),
+                "mountpoint": match.group("mount"),
+            }
+        )
     return rows
 
 
@@ -105,76 +110,86 @@ def _validate_server(
         )
     )
     for filesystem in server.get("filesystems", []):
-        results.append(_filesystem_result(run_id, site, server_id, filesystem, outputs, started))
+        results.extend(_filesystem_results(run_id, site, server_id, filesystem, outputs, started))
     for chrony in server.get("chrony", []):
         results.extend(_chrony_results(run_id, site, server_id, chrony, outputs, started))
     return results
 
 
-def _filesystem_result(
+def _filesystem_results(
     run_id: str,
     site: str,
     server_id: str,
     filesystem: dict[str, Any],
     outputs: dict[str, Any],
     started: str,
-) -> CheckResult:
-    expected_path = filesystem.get("path", "/")
+) -> list[CheckResult]:
     if outputs.get("df_error"):
-        return _r(
-            run_id,
-            "filesystem.utilization",
-            site,
-            server_id,
-            filesystem,
-            {"error": outputs.get("df_error")},
-            CheckStatus.ERROR,
-            "filesystem command failed",
-            started,
-        )
-    rows = parse_df(str(outputs.get("df", "")))
+        return [
+            _r(
+                run_id,
+                "filesystem.utilization",
+                site,
+                server_id,
+                filesystem,
+                {"error": outputs["df_error"], "df": outputs.get("df", "")},
+                CheckStatus.ERROR,
+                "filesystem command failed",
+                started,
+            )
+        ]
+    try:
+        raw = outputs.get("df")
+        if not isinstance(raw, str):
+            raise ValueError("filesystem output is unavailable")
+        rows = parse_df(raw)
+    except ValueError as exc:
+        return [
+            _r(
+                run_id,
+                "filesystem.utilization",
+                site,
+                server_id,
+                filesystem,
+                {"df": outputs.get("df"), "error": str(exc)},
+                CheckStatus.ERROR,
+                "filesystem utilization could not be parsed",
+                started,
+            )
+        ]
     if not rows:
-        return _r(
+        return [
+            _r(
+                run_id,
+                "filesystem.exists",
+                site,
+                server_id,
+                filesystem,
+                {"filesystems": [], "df": raw},
+                CheckStatus.FAIL,
+                "No mapper filesystems were found",
+                started,
+            )
+        ]
+    return [
+        _r(
             run_id,
             "filesystem.utilization",
             site,
             server_id,
             filesystem,
-            {"df": outputs.get("df", "")},
-            CheckStatus.ERROR,
-            "filesystem utilization could not be parsed",
+            row,
+            threshold_status(
+                float(row["utilization_percent"]),
+                float(filesystem["warning_percent"]),
+                float(filesystem["critical_percent"]),
+            ),
+            f"{row['filesystem']} mounted on {row['mountpoint']}: "
+            f"utilization {row['utilization_percent']}%",
             started,
         )
-    by_mount = {row["mountpoint"]: row for row in rows}
-    row = by_mount.get(expected_path)
-    if not row:
-        return _r(
-            run_id,
-            "filesystem.exists",
-            site,
-            server_id,
-            filesystem,
-            {"mountpoints": sorted(by_mount)},
-            CheckStatus.FAIL if filesystem.get("required", True) else CheckStatus.SKIPPED,
-            f"expected filesystem {expected_path} missing",
-            started,
-        )
-    status = threshold_status(
-        float(row["utilization_percent"]),
-        float(filesystem["warning_percent"]),
-        float(filesystem["critical_percent"]),
-    )
-    return _r(
-        run_id,
-        "filesystem.utilization",
-        site,
-        server_id,
-        filesystem,
-        row,
-        status,
-        f"{row['mountpoint']} utilization {row['utilization_percent']}%",
-        started,
-    )
+        for row in rows
+    ]
 
 
 def _chrony_results(

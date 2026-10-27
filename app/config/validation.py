@@ -13,9 +13,6 @@ from app.config.schema import (
     RABBITMQ_HEALTH_STATES,
     RABBITMQ_SUPPORTED_COLLECTION_MODES,
     RABBITMQ_SUPPORTED_SCOPES,
-    RECORDING_INITIAL_STATES,
-    RECORDING_SUPPORTED_COLLECTION_MODES,
-    RECORDING_SUPPORTED_WORKFLOWS,
     SSH_SUPPORTED_AUTH_TYPES,
     SSH_SUPPORTED_HOST_KEY_POLICIES,
     UNRESOLVED_PLACEHOLDERS,
@@ -122,12 +119,20 @@ def validate_config(
                 report.add_error(f"sites.sites[{idx}]", "site must be an object")
                 continue
             site_id = site.get("id")
-            if not site_id:
+            if not isinstance(site_id, str) or not site_id.strip():
                 report.add_error(f"sites.sites[{idx}].id", "site id is required")
             elif site_id in seen:
                 report.add_error(f"sites.sites[{idx}].id", f"duplicate site id {site_id!r}")
             else:
                 seen.add(site_id)
+            for field_name in ("display_name", "purpose"):
+                value = site.get(field_name)
+                if not is_unresolved_placeholder(value) and (
+                    not isinstance(value, str) or not value.strip()
+                ):
+                    report.add_error(
+                        f"sites.sites[{idx}].{field_name}", "must be a non-empty string"
+                    )
 
     modules = _module_rules(config)
     for module_name, module in modules.items():
@@ -144,7 +149,7 @@ def validate_config(
     _validate_review_policy(config, report)
     _validate_manual_db_check(config, report)
     site_ids = _site_ids(config)
-    for area in ["portainer_expected", "rabbitmq_expected", "recording", "servers"]:
+    for area in ["portainer_expected", "rabbitmq_expected", "servers"]:
         by_site = config.get(area, {}).get("sites")
         if isinstance(by_site, dict):
             for site_id in by_site:
@@ -155,7 +160,6 @@ def validate_config(
     _validate_portainer(config, report, production_preflight=production_preflight)
     _validate_doctor(config, report)
     _validate_rabbitmq(config, report, production_preflight=production_preflight)
-    _validate_recording(config, report, production_preflight=production_preflight)
     _validate_servers(config, report, production_preflight=production_preflight)
     _validate_thresholds(config, report)
     _validate_runtime_environment(config, report, production_preflight=production_preflight)
@@ -229,10 +233,10 @@ def _validate_parity(config: dict[str, Any], report: ValidationReport) -> None:
                 f"{path}.sites",
                 "must not be configured in rules; parity uses runtime SITE*_ID values",
             )
-        if len(site_ids) != 2:
+        if not site_ids:
             report.add_error(
                 path,
-                "enabled parity requires exactly two runtime sites from SITE_COUNT/SITE*_ID",
+                "parity requires at least one runtime site from SITE_COUNT/SITE*_ID",
             )
         mismatch_status = rule.get("mismatch_status")
         if isinstance(mismatch_status, str) and mismatch_status in UNRESOLVED_PLACEHOLDERS:
@@ -260,6 +264,13 @@ def _validate_parity(config: dict[str, Any], report: ValidationReport) -> None:
                     f"{path}.allowed_differences[{allow_idx}].site_values",
                     "must map site IDs to explicit expected parity values",
                 )
+            else:
+                for site_id in site_values:
+                    if site_id not in site_ids:
+                        report.add_error(
+                            f"{path}.allowed_differences[{allow_idx}].site_values.{site_id}",
+                            "unknown runtime site reference",
+                        )
 
 
 def _validate_review_policy(config: dict[str, Any], report: ValidationReport) -> None:
@@ -271,7 +282,6 @@ def _validate_review_policy(config: dict[str, Any], report: ValidationReport) ->
         "general_notes_enabled",
         "general_note_required",
         "manual_review_acknowledgment_required",
-        "recording_cleanup_acknowledgment_required",
         "reject_allowed",
     ]:
         value = review.get(key)
@@ -617,12 +627,20 @@ def _validate_doctor(config: dict[str, Any], report: ValidationReport) -> None:
     if not isinstance(api, dict):
         report.add_error("doctor.doctor.api", "api mode requires an api object")
     else:
-        for field_name in ["site1_url", "site2_url"]:
-            value = api.get(field_name)
-            if is_unresolved_placeholder(value):
-                continue
-            if not isinstance(value, str) or not value.strip():
-                report.add_error(f"doctor.doctor.api.{field_name}", "must be a non-empty string")
+        site_urls = api.get("sites")
+        if not isinstance(site_urls, dict):
+            report.add_error("doctor.doctor.api.sites", "must map runtime site IDs to API URLs")
+        else:
+            for site_id in set(site_urls) - _site_ids(config):
+                report.add_error(f"doctor.doctor.api.sites.{site_id}", "unknown site reference")
+            for site_id in _site_ids(config):
+                value = site_urls.get(site_id)
+                if is_unresolved_placeholder(value):
+                    continue
+                if not isinstance(value, str) or not value.strip():
+                    report.add_error(
+                        f"doctor.doctor.api.sites.{site_id}", "must be a non-empty API URL"
+                    )
 
     validation = doctor.get("validation")
     if not isinstance(validation, dict):
@@ -888,252 +906,6 @@ def _validate_rabbitmq_connection(
     _validate_positive_integer(connection.get("retry_attempts"), f"{path}.retry_attempts", report)
 
 
-def _validate_recording(
-    config: dict[str, Any],
-    report: ValidationReport,
-    *,
-    production_preflight: bool,
-) -> None:
-    recording = config.get("recording", {})
-    if not isinstance(recording, dict):
-        report.add_error("recording", "must be an object")
-        return
-
-    mode = recording.get("collection_mode")
-    if mode is None:
-        mode = "fixture" if recording.get("fixture_actual") is not None else "live"
-    if is_unresolved_placeholder(mode):
-        return
-    if mode not in RECORDING_SUPPORTED_COLLECTION_MODES:
-        report.add_error("recording.collection_mode", "must be fixture or live")
-        return
-
-    workflow = recording.get("workflow")
-    if not is_unresolved_placeholder(workflow) and workflow not in RECORDING_SUPPORTED_WORKFLOWS:
-        report.add_error(
-            "recording.workflow",
-            "must be existing_device_start_stop",
-        )
-
-    safety = recording.get("safety")
-    if not isinstance(safety, dict):
-        report.add_error("recording.safety", "must be an object")
-        safety = {}
-
-    safety_contract = {
-        "create_device_allowed": False,
-        "delete_device_allowed": False,
-        "state_changing_calls_require_explicit_approval": True,
-        "crash_after_start_requires_recovery": True,
-        "automatic_replay_after_unknown_state": False,
-    }
-    for key, expected in safety_contract.items():
-        value = safety.get(key)
-        if is_unresolved_placeholder(value):
-            continue
-        if not isinstance(value, bool):
-            report.add_error(
-                f"recording.safety.{key}",
-                "must be boolean",
-            )
-        elif value is not expected:
-            report.add_error(
-                f"recording.safety.{key}",
-                f"must be {str(expected).lower()} for the approved safety contract",
-            )
-
-    if mode == "fixture":
-        if not isinstance(recording.get("fixture_actual"), dict):
-            report.add_error(
-                "recording.fixture_actual",
-                "fixture mode requires fixture_actual",
-            )
-
-    if mode == "live" and recording.get("fixture_actual") is not None:
-        report.add_error(
-            "recording.fixture_actual",
-            "live Recording mode must not include fixture fallback data",
-        )
-
-    check_runtime = mode == "live" and production_preflight and _recording_enabled(config)
-
-    manager = recording.get("manager")
-    if not isinstance(manager, dict):
-        report.add_error("recording.manager", "live mode requires a manager object")
-    else:
-        _validate_runtime_value(
-            manager.get("url"),
-            "recording.manager.url",
-            report,
-            required=check_runtime,
-            label="Recording Manager WebApp URL",
-        )
-        selection = manager.get("device_selection")
-        if not isinstance(selection, dict):
-            report.add_error("recording.manager.device_selection", "must be an object")
-        else:
-            existing_only = selection.get("use_existing_device_only")
-            if not is_unresolved_placeholder(existing_only):
-                if not isinstance(existing_only, bool):
-                    report.add_error(
-                        "recording.manager.device_selection.use_existing_device_only",
-                        "must be boolean",
-                    )
-                elif existing_only is not True:
-                    report.add_error(
-                        "recording.manager.device_selection.use_existing_device_only",
-                        "must be true",
-                    )
-            initial_state = selection.get("required_initial_state")
-            if (
-                not is_unresolved_placeholder(initial_state)
-                and initial_state not in RECORDING_INITIAL_STATES
-            ):
-                report.add_error(
-                    "recording.manager.device_selection.required_initial_state",
-                    "must be not_recording",
-                )
-            status = selection.get("no_eligible_device_status")
-            if not is_unresolved_placeholder(status) and status not in VALID_CHECK_STATUSES:
-                report.add_error(
-                    "recording.manager.device_selection.no_eligible_device_status",
-                    "invalid status enum",
-                )
-
-    sites = recording.get("sites")
-    if not isinstance(sites, dict):
-        report.add_error("recording.sites", "must be an object")
-        sites = {}
-    for site_id in _site_ids(config):
-        site = sites.get(site_id)
-        path = f"recording.sites.{site_id}"
-        if not isinstance(site, dict):
-            report.add_error(path, "site observation configuration is required")
-            continue
-
-        webapp = site.get("webapp")
-        if not isinstance(webapp, dict):
-            report.add_error(f"{path}.webapp", "must be an object")
-        else:
-            _validate_runtime_value(
-                webapp.get("url"),
-                f"{path}.webapp.url",
-                report,
-                required=check_runtime,
-                label=f"Recording {site_id} WebApp URL",
-            )
-            capture = webapp.get("capture_baseline_at_test_start")
-            if not is_unresolved_placeholder(capture) and capture is not True:
-                report.add_error(
-                    f"{path}.webapp.capture_baseline_at_test_start",
-                    "must be true",
-                )
-
-        server = site.get("server")
-        if not isinstance(server, dict):
-            report.add_error(f"{path}.server", "must be an object")
-        else:
-            reference = server.get("connection_reference")
-            if not is_unresolved_placeholder(reference) and (
-                not isinstance(reference, str) or not reference.strip()
-            ):
-                report.add_error(
-                    f"{path}.server.connection_reference",
-                    "must be a non-empty connection reference",
-                )
-            capture = server.get("capture_baseline_at_test_start")
-            if not is_unresolved_placeholder(capture) and capture is not True:
-                report.add_error(
-                    f"{path}.server.capture_baseline_at_test_start",
-                    "must be true",
-                )
-
-    validation = recording.get("validation")
-    if not isinstance(validation, dict):
-        report.add_error("recording.validation", "must be an object")
-    else:
-        baseline = validation.get("baseline")
-        if not isinstance(baseline, dict):
-            report.add_error("recording.validation.baseline", "must be an object")
-        elif baseline.get("capture_at_test_start") is not True and not is_unresolved_placeholder(
-            baseline.get("capture_at_test_start")
-        ):
-            report.add_error("recording.validation.baseline.capture_at_test_start", "must be true")
-
-        after_start = validation.get("after_start")
-        if not isinstance(after_start, dict):
-            report.add_error("recording.validation.after_start", "must be an object")
-        else:
-            for key in [
-                "site1_webapp_count_delta",
-                "site2_webapp_count_delta",
-                "site1_server_count_delta",
-                "site2_server_count_delta",
-            ]:
-                value = after_start.get(key)
-                if is_unresolved_placeholder(value):
-                    continue
-                if not isinstance(value, int) or isinstance(value, bool) or value != 1:
-                    report.add_error(f"recording.validation.after_start.{key}", "must be integer 1")
-
-        after_stop = validation.get("after_stop")
-        if not isinstance(after_stop, dict):
-            report.add_error("recording.validation.after_stop", "must be an object")
-        else:
-            for key in [
-                "site1_webapp_must_return_to_baseline",
-                "site2_webapp_must_return_to_baseline",
-                "site1_server_must_return_to_baseline",
-                "site2_server_must_return_to_baseline",
-            ]:
-                value = after_stop.get(key)
-                if not is_unresolved_placeholder(value) and value is not True:
-                    report.add_error(f"recording.validation.after_stop.{key}", "must be true")
-
-    polling = recording.get("polling")
-    if not isinstance(polling, dict):
-        report.add_error("recording.polling", "must be an object")
-    else:
-        _validate_positive_number(
-            polling.get("timeout_seconds"),
-            "recording.polling.timeout_seconds",
-            report,
-        )
-        _validate_positive_number(
-            polling.get("interval_seconds"),
-            "recording.polling.interval_seconds",
-            report,
-        )
-
-    result_policy = recording.get("result_policy")
-    if not isinstance(result_policy, dict):
-        report.add_error(
-            "recording.result_policy",
-            "must be an object",
-        )
-    else:
-        expected_result_policy = {
-            "functional_mismatch_status": "FAIL",
-            "technical_failure_status": "ERROR",
-            "cleanup_failure_status": "ERROR",
-        }
-        for key, expected_status in expected_result_policy.items():
-            value = result_policy.get(key)
-            if is_unresolved_placeholder(value):
-                continue
-            if value != expected_status:
-                report.add_error(
-                    f"recording.result_policy.{key}",
-                    f"must be {expected_status}",
-                )
-        requires_recovery = result_policy.get("cleanup_failure_requires_recovery")
-        if not is_unresolved_placeholder(requires_recovery) and requires_recovery is not True:
-            report.add_error(
-                "recording.result_policy.cleanup_failure_requires_recovery",
-                "must be true",
-            )
-
-
 def _validate_servers(
     config: dict[str, Any],
     report: ValidationReport,
@@ -1149,57 +921,40 @@ def _validate_servers(
     if not isinstance(ssh, dict):
         report.add_error("servers.ssh", "must be an object")
     else:
-        username = ssh.get("username")
-        if not is_unresolved_placeholder(username) and (
-            not isinstance(username, str) or not username.strip()
-        ):
-            report.add_error("servers.ssh.username", "must be a non-empty string")
-
+        fixture_mode = (
+            not production_preflight
+            and isinstance(servers_config.get("fixture_actual"), dict)
+        )
         auth = ssh.get("auth")
-        if not is_unresolved_placeholder(auth) and auth not in SSH_SUPPORTED_AUTH_TYPES:
-            report.add_error("servers.ssh.auth", "must be private_key")
-
+        if auth not in SSH_SUPPORTED_AUTH_TYPES or (auth != "password" and not fixture_mode):
+            report.add_error("servers.ssh.auth", "must be password outside explicit fixture mode")
         host_policy = ssh.get("host_key_policy")
-        if (
-            not is_unresolved_placeholder(host_policy)
-            and host_policy not in SSH_SUPPORTED_HOST_KEY_POLICIES
+        if host_policy not in SSH_SUPPORTED_HOST_KEY_POLICIES or (
+            host_policy != "strict" and not fixture_mode
         ):
-            report.add_error("servers.ssh.host_key_policy", "must be strict")
+            report.add_error("servers.ssh.host_key_policy", "must be strict outside fixture mode")
+        if "private_key_path" in ssh:
+            report.add_error("servers.ssh.private_key_path", "obsolete; remove this setting")
+
+        credentials_required = production_preflight and _infrastructure_enabled(config)
+        for field_name, env_name in (
+            ("username", "SSH_USERNAME"),
+            ("password", "SSH_PASSWORD"),
+            ("known_hosts_path", "SSH_KNOWN_HOSTS_PATH"),
+        ):
+            value = ssh.get(field_name)
+            if credentials_required and (
+                not isinstance(value, str) or _runtime_unset(value)
+            ):
+                report.add_error(
+                    f"servers.ssh.{field_name}",
+                    f"{env_name} runtime value is missing or unresolved",
+                )
+            elif value is not None and not isinstance(value, str):
+                report.add_error(f"servers.ssh.{field_name}", "must be a string")
 
         _validate_positive_number(ssh.get("connect_timeout"), "servers.ssh.connect_timeout", report)
         _validate_positive_number(ssh.get("command_timeout"), "servers.ssh.command_timeout", report)
-
-        private_key_path = ssh.get("private_key_path")
-        if (
-            auth == "private_key"
-            and production_preflight
-            and _infrastructure_enabled(config)
-            and _runtime_unset(private_key_path)
-        ):
-            report.add_error(
-                "servers.ssh.private_key_path",
-                "SSH_PRIVATE_KEY_PATH runtime value is missing or unresolved",
-            )
-        elif not _runtime_unset(private_key_path) and (
-            not isinstance(private_key_path, str) or not private_key_path.strip()
-        ):
-            report.add_error("servers.ssh.private_key_path", "must be a non-empty string")
-
-        known_hosts_path = ssh.get("known_hosts_path")
-        if (
-            host_policy == "strict"
-            and production_preflight
-            and _infrastructure_enabled(config)
-            and _runtime_unset(known_hosts_path)
-        ):
-            report.add_error(
-                "servers.ssh.known_hosts_path",
-                "SSH_KNOWN_HOSTS_PATH runtime value is missing or unresolved",
-            )
-        elif not _runtime_unset(known_hosts_path) and (
-            not isinstance(known_hosts_path, str) or not known_hosts_path.strip()
-        ):
-            report.add_error("servers.ssh.known_hosts_path", "must be a non-empty string")
 
     sites = servers_config.get("sites")
     if not isinstance(sites, dict) or not sites:
@@ -1264,7 +1019,7 @@ def _validate_servers(
                 if len(filesystems) != 1:
                     report.add_error(
                         f"{path}.filesystems",
-                        "must contain exactly one root filesystem check",
+                        "must contain exactly one mapper discovery policy",
                     )
                 for fs_idx, filesystem in enumerate(filesystems):
                     fs_path = f"{path}.filesystems[{fs_idx}]"
@@ -1274,9 +1029,14 @@ def _validate_servers(
                             "filesystem check must be an object",
                         )
                         continue
+                    if "path" in filesystem:
+                        report.add_error(
+                            f"{fs_path}.path",
+                            "mountpoint selection is not supported; mapper discovery is dynamic",
+                        )
                     fs_expected = {
-                        "path": "/",
-                        "command": "df -h /",
+                        "match": "mapper",
+                        "command": "df -h | grep mapper",
                     }
                     for field_name, expected_value in fs_expected.items():
                         value = filesystem.get(field_name)
@@ -1290,11 +1050,11 @@ def _validate_servers(
                     required_fs = filesystem.get("required")
                     if (
                         not is_unresolved_placeholder(required_fs)
-                        and not isinstance(required_fs, bool)
+                        and required_fs is not True
                     ):
                         report.add_error(
                             f"{fs_path}.required",
-                            "must be boolean",
+                            "must be true; mapper filesystems are required",
                         )
                     _validate_percentage(
                         filesystem.get("warning_percent"),
@@ -1396,11 +1156,6 @@ def _portainer_enabled(config: dict[str, Any]) -> bool:
 
 def _rabbitmq_enabled(config: dict[str, Any]) -> bool:
     module = _module_rules(config).get("rabbitmq", {})
-    return bool(module.get("enabled") and module.get("required"))
-
-
-def _recording_enabled(config: dict[str, Any]) -> bool:
-    module = _module_rules(config).get("recording", {})
     return bool(module.get("enabled") and module.get("required"))
 
 
@@ -1597,7 +1352,7 @@ def _validate_placeholders(
             continue
         if not is_unresolved_placeholder(value):
             continue
-        message = f"unresolved value {value}"
+        message = "unresolved value" if "password" in path.lower() else f"unresolved value {value}"
         if unresolved_is_blocking:
             report.add_error(path, message)
         else:

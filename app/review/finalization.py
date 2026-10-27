@@ -237,16 +237,6 @@ def _required_note_errors(
             errors.append(
                 f"MANUAL_REVIEW result {result.id} ({result.check_id}) must be acknowledged."
             )
-        if (
-            result.module == "recording"
-            and result.metadata.get("cleanup_required") is True
-            and review.get("recording_cleanup_acknowledgment_required", False)
-            and not _has_text(note)
-        ):
-            errors.append(
-                f"Recording cleanup for result {result.id} ({result.check_id}) "
-                "must be verified in a reviewer note before APPROVE."
-            )
     return errors
 
 

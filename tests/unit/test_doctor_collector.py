@@ -21,8 +21,10 @@ class DoctorCollectorTests(unittest.TestCase):
         doctor["mode"] = "api"
         doctor["fixture_actual"] = None
         doctor["api"] = {
-            "site1_url": "https://doctor-site1.example/doctor-api",
-            "site2_url": "https://doctor-site2.example/doctor-api",
+            "sites": {
+                "site1": "https://doctor-site1.example/doctor-api",
+                "site2": "https://doctor-site2.example/doctor-api",
+            },
         }
 
         self.tmp = tempfile.TemporaryDirectory()

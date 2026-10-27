@@ -9,7 +9,6 @@ $RuntimeFiles = @(
     "deploy\docker\env\portainer.env",
     "deploy\docker\env\doctor.env",
     "deploy\docker\env\rabbitmq.env",
-    "deploy\docker\env\recording.env",
     "deploy\docker\env\infrastructure.env",
     "deploy\docker\env\splunk.env"
 )
@@ -19,18 +18,9 @@ $ReleaseLater = @(
     "WEEKEND_REPORT_BUILD_ID"
 )
 
-$BlockedAdapter = @(
-    "RECORDING_MANAGER_WEBAPP_URL",
-    "RECORDING_SITE1_WEBAPP_URL",
-    "RECORDING_SITE1_SERVER_REFERENCE",
-    "RECORDING_SITE2_WEBAPP_URL",
-    "RECORDING_SITE2_SERVER_REFERENCE"
-)
-
 $MissingFiles = @()
 $MustConfigure = @()
 $DeferredRelease = @()
-$DeferredAdapter = @()
 
 function Get-EnvValue {
     param(
@@ -64,7 +54,6 @@ foreach ($File in $RuntimeFiles) {
             if ($Value -match '<TBD>|<TO_IMPLEMENT>|<TO_VERIFY>|<VERIFY_[^>]*>') {
                 $Item = [PSCustomObject]@{ File=$File; Variable=$Name }
                 if ($ReleaseLater -contains $Name) { $DeferredRelease += $Item }
-                elseif ($BlockedAdapter -contains $Name) { $DeferredAdapter += $Item }
                 else { $MustConfigure += $Item }
             }
         }
@@ -75,7 +64,8 @@ $InfrastructureEnv = "deploy\docker\env\infrastructure.env"
 
 if (Test-Path $InfrastructureEnv) {
     foreach ($Name in @(
-        "SSH_PRIVATE_KEY_PATH",
+        "SSH_USERNAME",
+        "SSH_PASSWORD",
         "SSH_KNOWN_HOSTS_PATH"
     )) {
         $Value = Get-EnvValue $InfrastructureEnv $Name
@@ -119,11 +109,6 @@ if ($MustConfigure.Count -eq 0) { Write-Host "  none" }
 else { $MustConfigure | ForEach-Object { Write-Host "  $($_.File) :: $($_.Variable)" } }
 
 Write-Host ""
-Write-Host "DEFERRED - LIVE ADAPTER/CONTRACT NOT IMPLEMENTED YET:"
-if ($DeferredAdapter.Count -eq 0) { Write-Host "  none" }
-else { $DeferredAdapter | ForEach-Object { Write-Host "  $($_.File) :: $($_.Variable)" } }
-
-Write-Host ""
 Write-Host "DEFERRED - FINAL RELEASE/BUILD VALUES:"
 if ($DeferredRelease.Count -eq 0) { Write-Host "  none" }
 else { $DeferredRelease | ForEach-Object { Write-Host "  $($_.File) :: $($_.Variable)" } }
@@ -160,15 +145,21 @@ foreach ($Needle in $Needles) {
 
 Write-Host ""
 Write-Host "=== Shape validation using all runtime ENV files ==="
-$EnvArgs = @()
-foreach ($File in $RuntimeFiles | Where-Object { $_ -like 'deploy\docker\env\*.env' -and (Test-Path $_) }) {
-    $EnvArgs += "--env-file"
-    $EnvArgs += $File
+$ShapeExit = $null
+if ($MissingFiles.Count -gt 0) {
+    Write-Host "SKIP: runtime ENV files are not all present yet."
+    Write-Host "      Run shape validation after deployment configuration files are generated."
+} else {
+    $EnvArgs = @()
+    foreach ($File in $RuntimeFiles | Where-Object { $_ -like 'deploy\docker\env\*.env' }) {
+        $EnvArgs += "--env-file"
+        $EnvArgs += $File
+    }
+    & python scripts\validate_config.py --config deploy/docker/config --no-production-preflight @EnvArgs
+    $ShapeExit = $LASTEXITCODE
+    if ($ShapeExit -eq 0) { Write-Host "PASS: configuration shape validation passed." }
+    else { Write-Host "FAIL: configuration shape validation failed with exit code $ShapeExit." }
 }
-& python scripts\validate_config.py --config deploy/docker/config --no-production-preflight @EnvArgs
-$ShapeExit = $LASTEXITCODE
-if ($ShapeExit -eq 0) { Write-Host "PASS: configuration shape validation passed." }
-else { Write-Host "FAIL: configuration shape validation failed with exit code $ShapeExit." }
 
 Write-Host ""
 Write-Host "=== Git protection check ==="
@@ -181,9 +172,17 @@ foreach ($File in $RuntimeFiles) {
 }
 
 Write-Host ""
-if ($MissingFiles.Count -eq 0 -and $MustConfigure.Count -eq 0 -and $ShapeExit -eq 0) {
+if ($MissingFiles.Count -gt 0) {
+    Write-Host "PRE-DEPLOYMENT INCOMPLETE:"
+    Write-Host "Runtime ENV files have not been generated yet."
+    Write-Host "This is expected on the development machine."
+    Write-Host "Deployment-time validation must be rerun after ENV generation."
+    if ($MustConfigure.Count -gt 0) {
+        Write-Host "Existing runtime ENV files also contain MUST CONFIGURE NOW items."
+    }
+} elseif ($MustConfigure.Count -eq 0 -and $ShapeExit -eq 0) {
     Write-Host "RESULT: runtime ENV configuration has no unresolved values that must be filled now."
-    Write-Host "Remaining blockers are the explicitly deferred adapters and release values shown above."
+    Write-Host "Remaining deferred values are the release/build values shown above."
 } else {
-    Write-Host "RESULT: configuration still has items that must be fixed now."
+    Write-Host "RESULT: unresolved deployment configuration remains. Review MUST CONFIGURE NOW and validation failures above."
 }

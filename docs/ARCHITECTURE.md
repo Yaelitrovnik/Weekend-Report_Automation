@@ -95,7 +95,7 @@ The worker records:
 - current module;
 - timestamps.
 
-A stale Recording operation is never automatically replayed.
+Stale worker recovery never reuses partial results or automatically replays uncertain operations.
 
 ## 5. Collector / Validator Separation
 
@@ -178,10 +178,13 @@ cross-site parity.
 
 ```text
 Site 1 actual -> Site 1 health validation
-Site 2 actual -> Site 2 health validation
+Site 2 actual -> Site 2 health validation (if configured)
+Site 3 actual -> Site 3 health validation (if configured)
+...
+Site N actual -> Site N health validation
                                |
                                v
-                       configured parity
+                  configured parity only when SITE_COUNT > 1
 ```
 
 Both sites being identically wrong must still fail independent site-health validation.
@@ -195,25 +198,7 @@ Actual state comes from the RabbitMQ Management API or fixture actuals.
 
 The validator checks observed queue ready/unacked/total counts and node resource states. It does not validate the removed vhost/exchange/binding topology contract.
 
-### 7.3 Recording
-
-Recording uses an **existing-device** start/stop workflow.
-
-The application must not create/delete devices.
-
-High-level flow:
-
-1. select and verify a suitable existing non-recording device in the Manager WebApp;
-2. collect four runtime baselines from Site 1 WebApp, Site 2 WebApp, Site 1 server, and Site 2 server;
-3. start recording on that same device through the Manager WebApp;
-4. verify all four observations increased by the configured delta;
-5. stop the same device through the Manager WebApp;
-6. verify all four observations returned to baseline;
-7. verify cleanup.
-
-Crash/unknown state after a state-changing action requires `RECOVERY_REQUIRED`.
-
-### 7.4 Infrastructure
+### 7.3 Infrastructure
 
 Infrastructure collection is read-only.
 
@@ -221,16 +206,26 @@ Live SSH remains blocked until server inventory, authentication, host-key policy
 
 Validation covers:
 
-- filesystem existence/utilization;
+- dynamic mapper filesystem discovery/utilization;
 - Chrony synchronization/source/offset.
 
-### 7.5 DOCTOR
+The versioned filesystem policy runs `df -h | grep mapper` via strict SSH on every
+configured server in every site. Each discovered device/mountpoint gets a separate
+`CheckResult` with utilization and status; `/` is not required and there is no configured
+mapper inventory. Usage < 70% is PASS, >= 70% and < 80% is WARNING, and >= 80% is FAIL.
+Empty successful output or grep exit 1 without diagnostics means no mapper filesystems
+were found and produces FAIL. SSH, timeout, command, or parsing failures produce ERROR.
+Raw command output and exit metadata are retained as collection evidence; normalized
+results retain filesystem, mountpoint, and utilization. Existing UI/report grouping
+keeps server and site context for every filesystem.
 
-DOCTOR API mode uses dynamic service discovery per site. Discovered services are validated independently for health and the two site service sets are compared for parity.
+### 7.4 DOCTOR
+
+DOCTOR API mode uses dynamic service discovery per site. Discovered services are validated independently for health and all runtime site service sets are compared for parity when more than one site is configured.
 
 API mode requires a verified endpoint/schema/auth/validation contract. Reviewable service-health issues remain service-level `ERROR` findings and roll the module to `MANUAL_REVIEW`; transport/API/authentication/timeout/schema/collection errors remain blocking `ERROR`s.
 
-### 7.6 Splunk
+### 7.5 Splunk
 
 Splunk is a manual dashboard-review area.
 
@@ -353,3 +348,34 @@ EXPORT / TAG / PUSH THAT SAME IMAGE
 `deploy/docker/compose.ci.yml` intentionally contains no `build:` directive.
 
 See `docs/CI_CD.md`.
+
+## Dynamic runtime inventory
+
+`SITE_COUNT >= 1` and numbered ENV values are the sole runtime site inventory. Module
+configuration maps use the corresponding runtime IDs, including DOCTOR's API URL map.
+One-site deployments omit the parity phase altogether; two-site and larger deployments
+compare all participating sites after independent validation. Collection errors remain
+scoped to their site, and parity never overrides independent site health. Splunk and
+manual DB review do not depend on site count.
+
+Parity emits one result per configured module/field, with all observed site maps and a
+per-service mismatch map. Explicit allowed differences must cover the participating IDs;
+see CONFIGURATION.md for target and whole-map syntax. UI site summaries follow runtime
+order and display names, service cards wrap responsively, and module pages render persisted
+parity findings only when available in a multi-site run. Infrastructure cards are keyed by
+site and server ID so inventories cannot be merged across sites accidentally.
+
+
+### Infrastructure SSH credentials and host trust
+
+`SSHExecutor` uses Paramiko 5.0.1, with agent and key discovery disabled.
+`SSH_USERNAME` and secret `SSH_PASSWORD` authenticate the application; the file
+at `SSH_KNOWN_HOSTS_PATH` verifies the server. Only that file is loaded, with
+`RejectPolicy`; absent/changed keys fail and the trust file is never modified.
+Non-default ports use OpenSSH `[host]:port` entries. No SSH private key is needed.
+
+The executor bounds connection/banner/authentication waits and the whole command
+phase, including exec acknowledgement and concurrent stdout/stderr collection.
+Fixed error categories and password redaction protect returned evidence; raw
+transport diagnostics are suppressed. Hashing sanitizes password fields.
+Never commit runtime passwords. See [runtime ENV and trust configuration](CONFIGURATION.md#infrastructure-ssh-credentials-and-host-trust).

@@ -495,39 +495,6 @@ class FinalizationReadinessTests(unittest.TestCase):
             [],
         )
 
-    def test_recording_cleanup_requirement_requires_acknowledgment(self):
-        config = self.single_module_config("recording")
-        config["rules"]["review"]["required_module_notes"] = []
-        config["rules"]["review"]["approval_status_policy"]["FAIL"] = "REQUIRE_NOTE"
-        config["splunk_dashboards"]["dashboards"] = []
-        run_id = self.make_review_ready_run(
-            run_id="WR-20260811-000004",
-            module="recording",
-            result_status=CheckStatus.FAIL,
-            metadata={"cleanup_required": True},
-        )
-        result = self.repo.list_results(run_id)[0]
-        errors = validate_finalization_readiness(
-            self.repo,
-            config,
-            run_id,
-            ReviewDecision.APPROVE,
-        )
-        self.assertTrue(any("Recording cleanup" in error for error in errors))
-        self.repo.save_note(
-            ReviewNote(
-                run_id,
-                NoteScope.RESULT,
-                "reviewer",
-                "cleanup verified manually",
-                result_id=result.id,
-            )
-        )
-        self.assertEqual(
-            validate_finalization_readiness(self.repo, config, run_id, ReviewDecision.APPROVE),
-            [],
-        )
-
     def test_reject_policy_can_block_reject(self):
         config = self.single_module_config()
         config["rules"]["review"]["reject_allowed"] = False

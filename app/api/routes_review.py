@@ -4,7 +4,7 @@ import json
 from collections import Counter, defaultdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -61,7 +61,6 @@ MODULE_NAV = [
     {"id": "portainer", "label": "Portainer"},
     {"id": "doctor", "label": "DOCTOR"},
     {"id": "rabbitmq", "label": "RabbitMQ"},
-    {"id": "recording", "label": "Recording"},
     {"id": "infrastructure", "label": "Infrastructure"},
     {"id": "splunk", "label": "Splunk"},
     {"id": "review", "label": "Review"},
@@ -71,7 +70,6 @@ MODULE_LABELS = {
     "infrastructure": "Infrastructure",
     "portainer": "Portainer",
     "rabbitmq": "RabbitMQ",
-    "recording": "Recording",
     "site_parity": "Site Parity",
     "splunk": "Splunk",
 }
@@ -79,24 +77,6 @@ RABBITMQ_SECTION_RULES = [
     ("Collection", ("rabbitmq.collection",)),
     ("Queues", ("rabbitmq.queue.",)),
     ("Node Resources", ("rabbitmq.node.",)),
-]
-RECORDING_STEPS = [
-    (
-        "device_selection",
-        "Selected existing non-recording device",
-        ("recording.device_selection",),
-    ),
-    (
-        "pre_start_verification",
-        "Verified same device not recording before START",
-        ("recording.pre_start_verification",),
-    ),
-    ("baseline", "Four runtime baselines", ("recording.baseline.",)),
-    ("start_action", "Start recording on same device", ("recording.start_action",)),
-    ("after_start", "All four observations N+1/M+1", ("recording.after_start.",)),
-    ("stop_action", "Stop recording on same device", ("recording.stop_action",)),
-    ("after_stop", "All four observations restored", ("recording.after_stop.",)),
-    ("cleanup", "Cleanup", ("recording.cleanup",)),
 ]
 INFRASTRUCTURE_SECTIONS = [
     ("Reachability", ("infrastructure.ssh.reachable",)),
@@ -226,6 +206,11 @@ def _presentation_context(
     module_panels = _module_panels(all_results, evidence_by_result, notes, config)
     module_summary_items = _module_summary_items(all_results, config)
     site_summary_items = _site_summary_items(all_results, config)
+    runtime_sites = [site["id"] for site in config.get("sites", {}).get("sites", [])]
+    site_labels = {
+        site["id"]: site.get("display_name") or _site_label(site["id"])
+        for site in config.get("sites", {}).get("sites", [])
+    }
     overall = _status_name(
         run.automation_status
         if getattr(run, "automation_status", None) is not None
@@ -243,22 +228,30 @@ def _presentation_context(
         "overall_status": overall,
         "status_counts": _status_counts(all_results),
         "site_summaries": site_summary_items,
+        "module_site_summaries": _site_summary_items(page_results, config),
+        "module_parity_results": [
+            result for result in presented_all
+            if len(runtime_sites) > 1
+            and result["module"] == "site_parity"
+            and result["check_id"].startswith(f"parity.{active_module}.")
+        ],
         "module_summaries": module_summary_items,
         "module_panels": module_panels,
         "attention_results": attention_results,
         "page_results": presented_page,
         "all_presented_results": presented_all,
         "portainer_services": _portainer_services(
-            [result for result in presented_page if result["module"] == "portainer"]
+            [result for result in presented_page if result["module"] == "portainer"],
+            runtime_sites,
+            site_labels,
         ),
         "doctor_services": _doctor_services(
-            [result for result in presented_page if result["module"] == "doctor"]
+            [result for result in presented_page if result["module"] == "doctor"],
+            runtime_sites,
+            site_labels,
         ),
         "rabbitmq_sections": _rabbitmq_sections(
             [result for result in presented_page if result["module"] == "rabbitmq"]
-        ),
-        "recording_workflows": _recording_workflows(
-            [result for result in presented_page if result["module"] == "recording"]
         ),
         "infrastructure_servers": _infrastructure_servers(
             [result for result in presented_page if result["module"] == "infrastructure"]
@@ -337,15 +330,19 @@ def _site_summary_items(
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     summaries = {item.site: item for item in aggregate_site_summaries(results, config)}
-    sites_config = config.get("servers", {}).get("sites", {})
-    site_order = list(sites_config.keys()) if isinstance(sites_config, dict) else []
+    sites_config = config.get("sites", {}).get("sites", [])
+    labels = {
+        site["id"]: site.get("display_name") or _site_label(site["id"])
+        for site in sites_config
+    }
+    site_order = list(labels)
     for result in results:
         if result.site and result.site not in site_order:
             site_order.append(result.site)
     return [
         {
             "site": site,
-            "label": _site_label(site),
+            "label": labels.get(site, _site_label(site)),
             "status": _status_name(
                 summaries[site].status if site in summaries else CheckStatus.SKIPPED
             ),
@@ -410,7 +407,11 @@ def _present_result(
     }
 
 
-def _portainer_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _portainer_services(
+    results: list[dict[str, Any]],
+    runtime_sites: list[str],
+    site_labels: dict[str, str],
+) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str | None, list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -420,12 +421,12 @@ def _portainer_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     services = []
     for service, by_site in sorted(grouped.items()):
         site_rows = []
-        for site in _site_order(by_site.keys()):
+        for site in dict.fromkeys([*runtime_sites, *_site_order(by_site.keys())]):
             checks = by_site.get(site, [])
             site_rows.append(
                 {
                     "site": site,
-                    "label": _site_label(site),
+                    "label": site_labels.get(site, _site_label(site)) if site else "Global",
                     "status": _aggregate_presented(checks),
                     "desired": _portainer_metric(checks, "desired_replicas"),
                     "running": _portainer_metric(checks, "running_replicas"),
@@ -442,7 +443,6 @@ def _portainer_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     [check for checks in by_site.values() for check in checks]
                 ),
                 "site_rows": site_rows,
-                "parity_status": _portainer_parity_status(site_rows),
             }
         )
     return services
@@ -463,16 +463,11 @@ def _portainer_metric(results: list[dict[str, Any]], metric: str) -> str:
     return "not captured"
 
 
-def _portainer_parity_status(site_rows: list[dict[str, Any]]) -> str:
-    statuses = [row["status"] for row in site_rows]
-    if len(site_rows) < 2:
-        return CheckStatus.MANUAL_REVIEW.value
-    if all(status == CheckStatus.PASS.value for status in statuses):
-        return CheckStatus.PASS.value
-    return _aggregate_status_names(statuses)
-
-
-def _doctor_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _doctor_services(
+    results: list[dict[str, Any]],
+    runtime_sites: list[str],
+    site_labels: dict[str, str],
+) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str | None, list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -483,12 +478,12 @@ def _doctor_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     services = []
     for service, by_site in sorted(grouped.items()):
         site_rows = []
-        for site in _site_order(by_site.keys()):
+        for site in dict.fromkeys([*runtime_sites, *_site_order(by_site.keys())]):
             checks = by_site.get(site, [])
             site_rows.append(
                 {
                     "site": site,
-                    "label": _site_label(site),
+                    "label": site_labels.get(site, _site_label(site)) if site else "Global",
                     "status": _aggregate_presented(checks),
                     "reason": _doctor_reason(checks),
                     "checks": checks,
@@ -507,6 +502,8 @@ def _doctor_services(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _doctor_reason(results: list[dict[str, Any]]) -> str:
+    if not results:
+        return "Not captured"
     for result in results:
         actual = result.get("actual_value")
         if isinstance(actual, dict):
@@ -547,45 +544,13 @@ def _rabbitmq_sections(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sections
 
 
-def _recording_workflows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not results:
-        return []
-    steps = []
-    used_ids: set[int | None] = set()
-    for key, label, check_ids in RECORDING_STEPS:
-        step_results = [
-            result
-            for result in results
-            if any(result["check_id"].startswith(check_id) for check_id in check_ids)
-        ]
-        used_ids.update(result["id"] for result in step_results)
-        steps.append(
-            {
-                "key": key,
-                "label": label,
-                "status": _aggregate_presented(step_results),
-                "results": step_results,
-            }
-        )
-    remaining = [result for result in results if result["id"] not in used_ids]
-    return [
-        {
-            "site": None,
-            "label": "Manager-controlled workflow",
-            "status": _aggregate_presented(results),
-            "steps": steps,
-            "remaining": remaining,
-        }
-    ]
-
-
 def _infrastructure_servers(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_server: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_server: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for result in results:
         server = result["target"] or result["site"] or "server"
-        by_server[server].append(result)
+        by_server[(result["site"] or "", server)].append(result)
     servers = []
-    for server, server_results in sorted(by_server.items()):
+    for (site, server), server_results in sorted(by_server.items()):
         sections = []
         assigned: set[int | None] = set()
         for title, prefixes in INFRASTRUCTURE_SECTIONS:
@@ -612,6 +577,7 @@ def _infrastructure_servers(results: list[dict[str, Any]]) -> list[dict[str, Any
         servers.append(
             {
                 "server": server,
+                "site_label": _site_label(site),
                 "status": _aggregate_presented(server_results),
                 "sections": sections,
             }
@@ -676,20 +642,16 @@ def _site_order(sites: Any) -> list[str | None]:
 
 
 def _site_sort_value(site: str | None) -> int:
-    if site == "site1":
-        return 1
-    if site == "site2":
-        return 2
+    if site and site.startswith("site") and site[4:].isdigit():
+        return int(site[4:])
     if site is None:
         return 99
     return 10
 
 
 def _site_label(site: str | None) -> str:
-    if site == "site1":
-        return "Site 1"
-    if site == "site2":
-        return "Site 2"
+    if site and site.startswith("site") and site[4:].isdigit():
+        return f"Site {site[4:]}"
     return site or "Global"
 
 
@@ -735,7 +697,6 @@ def _summarize_value(value: Any) -> str:
             "checks_performed",
             "count",
             "expected_count",
-            "recording",
             "reviewed",
             "reachable",
             "usable",
@@ -810,6 +771,8 @@ def module_page(
     repo: RepoDep,
     config: ConfigDep,
 ):
+    if module not in MODULES:
+        raise HTTPException(status_code=404, detail="Unknown module")
     if module == "splunk":
         return templates.TemplateResponse(
             request,
