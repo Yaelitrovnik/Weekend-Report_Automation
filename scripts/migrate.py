@@ -10,7 +10,9 @@ from app.database.repository import Repository
 
 
 def main() -> int:
-    repo = Repository(os.getenv("WEEKEND_REPORT_DATABASE_URL", "sqlite:///data/weekend-report.sqlite"))
+    repo = Repository(
+        os.getenv("WEEKEND_REPORT_DATABASE_URL", "sqlite:///data/weekend-report.sqlite")
+    )
     try:
         print("database schema initialized")
         return 0

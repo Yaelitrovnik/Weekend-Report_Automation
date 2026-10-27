@@ -18,19 +18,34 @@ def build_snapshot(
     results = repository.list_results(run_id)
     evidence = repository.list_evidence(run_id)
     notes = repository.list_notes(run_id)
+    manual_db_review = repository.get_manual_db_review(run_id)
     dashboards = config.get("splunk_dashboards", {}).get("dashboards", [])
     parity_results = [
         result
         for result in results
         if result.module == "site_parity" or result.metadata.get("parity_only") is True
     ]
+    manual_db_snapshot: dict[str, Any] | None = None
+    if manual_db_review is not None:
+        manual_db_snapshot = {
+            "id": manual_db_review.id,
+            "run_id": manual_db_review.run_id,
+            "display_name": manual_db_review.display_name,
+            "script_path": manual_db_review.script_path,
+            "execution_method": "Performed locally by reviewer",
+            "result": manual_db_review.result.value,
+            "comment": manual_db_review.comment,
+            "reviewed_at": manual_db_review.reviewed_at,
+            "final_decision": decision.value,
+        }
     snapshot = {
-        "snapshot_version": 1,
+        "snapshot_version": 2,
         "created_at": iso_now(),
         "run": to_jsonable(run),
         "results": to_jsonable(results),
         "evidence": to_jsonable(evidence),
         "notes": to_jsonable(notes),
+        "manual_db_review": manual_db_snapshot,
         "overall_status": aggregate_status(results, config).value,
         "site_summaries": to_jsonable(site_summaries(results, config)),
         "module_summaries": to_jsonable(module_summaries(results, config)),

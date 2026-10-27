@@ -13,6 +13,13 @@ class ExecutionStep:
     required: bool
 
 
+def parity_applicable(config: dict[str, Any]) -> bool:
+    """Cross-site comparisons follow independent checks only in multi-site runs."""
+    return len(config.get("sites", {}).get("sites", [])) > 1 and any(
+        rule.get("enabled", False) for rule in config.get("rules", {}).get("parity", [])
+    )
+
+
 def build_execution_plan(config: dict[str, Any]) -> list[ExecutionStep]:
     modules = config.get("rules", {}).get("modules", {})
     steps: list[ExecutionStep] = []

@@ -123,14 +123,18 @@
     </div>
     <div class="dashboard-grid">
       {% for dashboard in dashboard_cards %}
-        <article class="dashboard-card compact-card">
+        <article class="dashboard-card compact-card" data-splunk-dashboard-card>
           <div class="dashboard-card-head">
             <div>
               <p class="eyebrow">{{ dashboard.required_label }}</p>
               <h3>{{ dashboard.display_name }}</h3>
             </div>
-            <a class="button button-secondary" data-dashboard-url href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer">Open Dashboard</a>
+            <a class="button button-secondary" data-dashboard-url {% if dashboard.include_in_open_all %}data-dashboard-open-all{% endif %} href="{{ dashboard.url }}" target="_blank" rel="noopener noreferrer" > Open Dashboard </a>
           </div>
+          <label class="check-field">
+            <input type="checkbox" data-splunk-reviewed {% if dashboard.reviewed %}checked{% endif %}>
+            <span>Dashboard reviewed</span>
+          </label>
           <label class="note-field">
             <span>Dashboard note</span>
             <textarea
@@ -174,6 +178,125 @@
   </details>
 </section>
 
+{% if manual_db_check.enabled %}
+<section
+  class="panel"
+  id="manual-db-check"
+  data-manual-db-review
+  data-run-id="{{ run.run_id }}"
+>
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Manual Verification</p>
+      <h2>{{ manual_db_check.display_name }}</h2>
+    </div>
+
+    {% if manual_db_review %}
+      {{ ui.status_badge(manual_db_review.result) }}
+    {% endif %}
+  </div>
+
+  <p class="panel-copy">
+    Run this PowerShell script locally on the reviewer workstation.
+    Weekend Report does not execute the script on the server.
+  </p>
+
+  <div class="note-card">
+    <div class="note-card-head">
+      <strong>Local script</strong>
+      {% if manual_db_check.required %}
+        <span>Required before final decision</span>
+      {% endif %}
+    </div>
+
+    <p>
+      <code>{{ manual_db_check.script_path }}</code>
+    </p>
+
+    <p>
+      <code data-manual-db-command>{{ manual_db_check.powershell_command }}</code>
+    </p>
+
+    <div class="action-bar">
+      <button
+        class="button button-secondary"
+        type="button"
+        data-action="copy-manual-db-command"
+      >
+        Copy PowerShell Command
+      </button>
+
+      <a
+        class="button button-secondary"
+        href="{{ manual_db_check.file_uri }}"
+      >
+        Open Local Script
+      </a>
+    </div>
+
+    <p class="panel-copy">
+      The local-file link depends on browser security policy.
+      The copyable PowerShell command is the supported fallback.
+    </p>
+  </div>
+
+  <div
+    class="decision-grid"
+    role="radiogroup"
+    aria-label="Manual database synchronization result"
+  >
+    {% for result_value in ["PASS", "FAIL", "NOT RUN"] %}
+      <label class="decision-card">
+        <input
+          type="radio"
+          name="manual-db-result"
+          value="{{ result_value }}"
+          {% if manual_db_review and manual_db_review.result == result_value %}
+            checked
+          {% endif %}
+          {% if not manual_db_editable %}
+            disabled
+          {% endif %}
+        >
+        <span>
+          <strong>{{ result_value }}</strong>
+        </span>
+      </label>
+    {% endfor %}
+  </div>
+
+  <label class="note-field">
+    <span>DB check comment — required</span>
+    <textarea
+      data-manual-db-comment
+      name="manual-db-comment"
+      required
+      {% if not manual_db_editable %}disabled{% endif %}
+    >{{ manual_db_review.comment if manual_db_review else "" }}</textarea>
+  </label>
+
+  <div class="action-bar">
+    <button
+      class="button button-primary"
+      type="button"
+      data-action="save-manual-db-review"
+      data-run-id="{{ run.run_id }}"
+      {% if not manual_db_editable %}disabled{% endif %}
+    >
+      Save DB Check
+    </button>
+
+    <span data-manual-db-saved-status>
+      {% if manual_db_review %}
+        Saved at {{ manual_db_review.reviewed_at }}
+      {% else %}
+        Not yet saved
+      {% endif %}
+    </span>
+  </div>
+</section>
+{% endif %}
+
 <section class="panel final-confirmation" id="final-confirmation">
   <div class="panel-heading">
     <div>
@@ -189,7 +312,19 @@
     <span>Reviewer notes do not convert FAIL/WARNING/ERROR to PASS.</span>
   </div>
   {% if run.review_decision %}
-    <p class="panel-copy">Decision recorded as {{ run.review_decision }} by {{ run.reviewed_by or "reviewer" }} at {{ run.reviewed_at or "time not recorded" }}.</p>
+    <p class="panel-copy">Decision recorded as {{ run.review_decision }} at {{ run.reviewed_at or "time not recorded" }}.</p>
+  {% else %}
+    <label class="note-field">
+      <span>Reviewer name — required for the final report</span>
+      <input
+        type="text"
+        name="reviewer-name"
+        data-final-reviewer-name
+        maxlength="100"
+        autocomplete="name"
+        required
+      >
+    </label>
   {% endif %}
   <div class="decision-grid" role="radiogroup" aria-label="Final review decision">
     <label class="decision-card approve-card">

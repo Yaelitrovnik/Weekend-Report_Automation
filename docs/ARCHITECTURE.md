@@ -1,6 +1,6 @@
 # Architecture
 
-**Documentation synchronized:** 2026-08-23
+**Documentation synchronized:** 2026-09-06
 
 ## 1. System Purpose
 
@@ -62,13 +62,11 @@ Docker base: python:3.14-slim-bookworm pinned by digest
 
 ## 3. Runtime Security Boundary
 
-- Health endpoints may remain public.
-- In production, main pages, run pages, module/review pages, evidence endpoints, evidence downloads, recovery actions, and final-report access require authenticated/authorized access.
-- Development mode may use local convenience identity.
-- Production rejects arbitrary `X-Reviewer`.
-- The implemented production identity boundary is configurable and currently supports `trusted_header` only behind an approved trusted reverse-proxy/authentication boundary.
-- Browser mutations use reviewer-bound signed CSRF tokens generated with `WEEKEND_REPORT_CSRF_SIGNING_KEY`.
-- One permanent public/shared CSRF token is not supported.
+- Weekend Report does not implement application user login, local accounts, trusted identity headers, or an authorized-reviewer list.
+- Read-only application pages, evidence endpoints, and final-report downloads are reachable without an application login. Network exposure must therefore be controlled by the deployment environment as required.
+- Browser mutations use signed CSRF tokens generated with `WEEKEND_REPORT_CSRF_SIGNING_KEY` when that key is configured. Production preflight requires the key.
+- The reviewer name is not an authenticated identity. It is entered manually only during final confirmation and is written to the reviewer confirmation section at the bottom of the final report.
+- Reviewer notes remain operational review data; they are not identity-bearing authentication records.
 
 ## 4. Run and Worker Model
 
@@ -97,7 +95,7 @@ The worker records:
 - current module;
 - timestamps.
 
-A stale Recording operation is never automatically replayed.
+Stale worker recovery never reuses partial results or automatically replays uncertain operations.
 
 ## 5. Collector / Validator Separation
 
@@ -117,6 +115,9 @@ Parity validator
 Collectors do not decide business PASS/FAIL policy.
 
 Validators do not invent actual state.
+
+The Docker image contains code only. Deployment values, endpoints, site inventory, and secrets are
+provided through external ENV/secrets. `rules.yml` is the read-only policy file.
 
 ## 6. Evidence and Review
 
@@ -172,60 +173,32 @@ Weekend Report Worker
 
 The application does not expose Portainer mutation operations.
 
-Expected-state validation occurs independently per site before cross-site parity.
+Services and tasks are discovered dynamically. Independent site-health validation occurs before
+cross-site parity.
 
 ```text
-Site 1 actual -> Site 1 expected-state validation
-Site 2 actual -> Site 2 expected-state validation
+Site 1 actual -> Site 1 health validation
+Site 2 actual -> Site 2 health validation (if configured)
+Site 3 actual -> Site 3 health validation (if configured)
+...
+Site N actual -> Site N health validation
                                |
                                v
-                       configured parity
+                  configured parity only when SITE_COUNT > 1
 ```
 
-Both sites being identically wrong must still fail expected-state validation.
+Both sites being identically wrong must still fail independent site-health validation.
 
 ### 7.2 RabbitMQ
 
-RabbitMQ expected state contains common vhosts/queues/exchanges/bindings, defaults, and per-site overrides.
+RabbitMQ runtime ENV contains Management API connection values and required sites. `rules.yml`
+contains all-queue zero-count policy, queue recheck policy, and all-node resource-state policy.
 
 Actual state comes from the RabbitMQ Management API or fixture actuals.
 
-Required topology defaults to required unless explicitly marked optional.
+The validator checks observed queue ready/unacked/total counts and node resource states. It does not validate the removed vhost/exchange/binding topology contract.
 
-### 7.3 Recording
-
-Recording uses an **existing-device** start/stop workflow.
-
-The application must not create/delete devices.
-
-High-level flow:
-
-1. collect WebApp/backend baselines;
-2. select a suitable existing non-recording device;
-3. start recording on that same device;
-4. verify device/WebApp/backend expected transition;
-5. stop the same device;
-6. verify restoration;
-7. verify cleanup.
-
-Crash/unknown state after a state-changing action requires `RECOVERY_REQUIRED`.
-
-### 7.4 Database
-
-The database module is an adapter around the owner-supplied existing sync function.
-
-Expected structured outcomes include:
-
-- create success;
-- replication after create;
-- delete success;
-- replication after delete;
-- cleanup complete;
-- errors.
-
-The Weekend Report project does not silently replace the existing temp-table algorithm.
-
-### 7.5 Infrastructure
+### 7.3 Infrastructure
 
 Infrastructure collection is read-only.
 
@@ -233,24 +206,26 @@ Live SSH remains blocked until server inventory, authentication, host-key policy
 
 Validation covers:
 
-- filesystem existence/utilization;
-- NFS mapping/source/usability/utilization;
+- dynamic mapper filesystem discovery/utilization;
 - Chrony synchronization/source/offset.
 
-### 7.6 DOCTOR
+The versioned filesystem policy runs `df -h | grep mapper` via strict SSH on every
+configured server in every site. Each discovered device/mountpoint gets a separate
+`CheckResult` with utilization and status; `/` is not required and there is no configured
+mapper inventory. Usage < 70% is PASS, >= 70% and < 80% is WARNING, and >= 80% is FAIL.
+Empty successful output or grep exit 1 without diagnostics means no mapper filesystems
+were found and produces FAIL. SSH, timeout, command, or parsing failures produce ERROR.
+Raw command output and exit metadata are retained as collection evidence; normalized
+results retain filesystem, mountpoint, and utilization. Existing UI/report grouping
+keeps server and site context for every filesystem.
 
-DOCTOR supports:
+### 7.4 DOCTOR
 
-```text
-manual
-api
-```
+DOCTOR API mode uses dynamic service discovery per site. Discovered services are validated independently for health and all runtime site service sets are compared for parity when more than one site is configured.
 
-API mode requires a verified endpoint/schema/auth/validation contract.
+API mode requires a verified endpoint/schema/auth/validation contract. Reviewable service-health issues remain service-level `ERROR` findings and roll the module to `MANUAL_REVIEW`; transport/API/authentication/timeout/schema/collection errors remain blocking `ERROR`s.
 
-Manual mode remains a human-review finding.
-
-### 7.7 Splunk
+### 7.5 Splunk
 
 Splunk is a manual dashboard-review area.
 
@@ -265,9 +240,11 @@ Each configured dashboard can have:
 
 All saved Splunk notes are frozen into the snapshot/final report.
 
+Opening a dashboard URL is not review evidence by itself. Required review is satisfied only by a persisted dashboard review acknowledgment, with a separate note requirement when configured.
+
 ## 8. Aggregation and Finalization
 
-`config/rules.yml` is authoritative for:
+`deploy/docker/config/rules.yml` is the single authoritative runtime policy source for:
 
 - module enablement;
 - module requiredness;
@@ -371,3 +348,34 @@ EXPORT / TAG / PUSH THAT SAME IMAGE
 `deploy/docker/compose.ci.yml` intentionally contains no `build:` directive.
 
 See `docs/CI_CD.md`.
+
+## Dynamic runtime inventory
+
+`SITE_COUNT >= 1` and numbered ENV values are the sole runtime site inventory. Module
+configuration maps use the corresponding runtime IDs, including DOCTOR's API URL map.
+One-site deployments omit the parity phase altogether; two-site and larger deployments
+compare all participating sites after independent validation. Collection errors remain
+scoped to their site, and parity never overrides independent site health. Splunk and
+manual DB review do not depend on site count.
+
+Parity emits one result per configured module/field, with all observed site maps and a
+per-service mismatch map. Explicit allowed differences must cover the participating IDs;
+see CONFIGURATION.md for target and whole-map syntax. UI site summaries follow runtime
+order and display names, service cards wrap responsively, and module pages render persisted
+parity findings only when available in a multi-site run. Infrastructure cards are keyed by
+site and server ID so inventories cannot be merged across sites accidentally.
+
+
+### Infrastructure SSH credentials and host trust
+
+`SSHExecutor` uses Paramiko 5.0.1, with agent and key discovery disabled.
+`SSH_USERNAME` and secret `SSH_PASSWORD` authenticate the application; the file
+at `SSH_KNOWN_HOSTS_PATH` verifies the server. Only that file is loaded, with
+`RejectPolicy`; absent/changed keys fail and the trust file is never modified.
+Non-default ports use OpenSSH `[host]:port` entries. No SSH private key is needed.
+
+The executor bounds connection/banner/authentication waits and the whole command
+phase, including exec acknowledgement and concurrent stdout/stderr collection.
+Fixed error categories and password redaction protect returned evidence; raw
+transport diagnostics are suppressed. Hashing sanitizes password fields.
+Never commit runtime passwords. See [runtime ENV and trust configuration](CONFIGURATION.md#infrastructure-ssh-credentials-and-host-trust).

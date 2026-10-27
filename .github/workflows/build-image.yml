@@ -1,9 +1,11 @@
 name: Build Verified Image
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
-      - master
+      - main
     paths:
       - TAG
 
@@ -30,36 +32,21 @@ jobs:
       - name: Derive immutable build identity
         id: identity
         shell: bash
-        run: |
-          set -euo pipefail
+        run: bash .github/scripts/derive-build-identity.sh
 
-          short_sha="${GITHUB_SHA:0:12}"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
 
-          if [[ ! -f TAG ]]; then
-            echo "TAG file is missing" >&2
-            exit 1
-          fi
-
-          version="$(tr -d '\r\n' < TAG)"
-
-          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "TAG must contain a semantic version such as v1.0.2" >&2
-            exit 1
-          fi
-
-          build_id="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          image_tag="weekend-report:ci-${short_sha}"
-          release_image_tag="weekend-report:${version}"
-          archive_base="weekend-report_${version}_${short_sha}"
-
-          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "build_id=${build_id}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${image_tag}" >> "$GITHUB_OUTPUT"
-          echo "release_image_tag=${release_image_tag}" >> "$GITHUB_OUTPUT"
-          echo "archive_base=${archive_base}" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
+      - name: Build runtime base image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile.runtime-base
+          load: true
+          push: false
+          tags: weekend-report-runtime-base:python314
 
       - name: Build image only after all pre-image gates pass
         uses: docker/build-push-action@v7
@@ -74,14 +61,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             io.weekend-report.build-id=${{ steps.identity.outputs.build_id }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Record exact built image ID
         shell: bash
-        run: |
-          set -euo pipefail
-          docker image inspect --format '{{.Id}}' "${{ steps.identity.outputs.image_tag }}" | tee image-id.txt
+        run: bash .github/scripts/record-built-image.sh "${{ steps.identity.outputs.image_tag }}"
 
       - name: Smoke-test the exact built image
         env:
@@ -91,34 +74,16 @@ jobs:
 
       - name: Version-tag the exact smoked image
         shell: bash
-        run: |
-          set -euo pipefail
-          docker tag "${{ steps.identity.outputs.image_tag }}" "${{ steps.identity.outputs.release_image_tag }}"
-          release_id="$(docker image inspect --format '{{.Id}}' "${{ steps.identity.outputs.release_image_tag }}")"
-          build_id="$(cat image-id.txt)"
-          if [[ "${release_id}" != "${build_id}" ]]; then
-            echo "Release tag does not point to the exact smoked image" >&2
-            echo "build=${build_id}" >&2
-            echo "release=${release_id}" >&2
-            exit 1
-          fi
-          printf '%s\n' "${release_id}" > release-image-id.txt
+        run: bash .github/scripts/version-tag-smoked-image.sh "${{ steps.identity.outputs.image_tag }}" "${{ steps.identity.outputs.release_image_tag }}"
 
       - name: Export verified offline image artifact
         shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          archive="dist/${{ steps.identity.outputs.archive_base }}.tar.gz"
-          docker save "${{ steps.identity.outputs.release_image_tag }}" | gzip -1 > "$archive"
-          (cd dist && sha256sum "${{ steps.identity.outputs.archive_base }}.tar.gz" > "${{ steps.identity.outputs.archive_base }}.tar.gz.sha256")
-          cp image-id.txt dist/image-id.txt
-          cp release-image-id.txt dist/release-image-id.txt
+        run: bash .github/scripts/export-verified-image.sh "${{ steps.identity.outputs.release_image_tag }}" "${{ steps.identity.outputs.archive_base }}"
 
       - name: Upload verified image artifact
         uses: actions/upload-artifact@v6
         with:
-          name: verified-weekend-report-image-${{ steps.identity.outputs.short_sha }}
+          name: verified-weekend-report-image-${{ steps.identity.outputs.version }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
@@ -128,42 +93,18 @@ jobs:
         shell: bash
         env:
           TAG_PUBLISH: ${{ vars.WEEKEND_REPORT_PUBLISH_IMAGE || '0' }}
-        run: |
-          set -euo pipefail
-
-          publish=false
-
-          if [[ "${TAG_PUBLISH}" == "1" ]]; then
-            publish=true
-          fi
-
-          echo "enabled=${publish}" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/decide-publish.sh
 
       - name: Authenticate to GHCR after smoke passes
         if: steps.publish.outputs.enabled == 'true'
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+        run: bash .github/scripts/login-ghcr.sh
 
       - name: Publish the exact verified image
         if: steps.publish.outputs.enabled == 'true'
         shell: bash
-        run: |
-          set -euo pipefail
-          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
-          local_image="${{ steps.identity.outputs.release_image_tag }}"
-          sha_tag="${repo}:sha-${{ steps.identity.outputs.short_sha }}"
-          docker tag "$local_image" "$sha_tag"
-          docker push "$sha_tag"
-
-          version_tag="${repo}:${{ steps.identity.outputs.version }}"
-          docker tag "$local_image" "$version_tag"
-          docker push "$version_tag"
-
-          if [[ "${{ vars.WEEKEND_REPORT_PUBLISH_LATEST || '0' }}" == "1" ]]; then
-            docker tag "$local_image" "${repo}:latest"
-            docker push "${repo}:latest"
-          fi
+        env:
+          PUBLISH_LATEST: ${{ vars.WEEKEND_REPORT_PUBLISH_LATEST || '0' }}
+        run: bash .github/scripts/publish-verified-image.sh "${{ steps.identity.outputs.release_image_tag }}" "${{ steps.identity.outputs.short_sha }}" "${{ steps.identity.outputs.version }}"

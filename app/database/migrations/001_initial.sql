@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS review_notes (
     dashboard_id TEXT,
     author TEXT NOT NULL,
     note TEXT NOT NULL,
+    reviewed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );

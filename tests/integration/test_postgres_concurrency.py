@@ -6,7 +6,13 @@ import unittest
 from urllib.parse import urlparse
 
 from app.database.repository import Repository
+from app.domain import (
+    CheckStatus,
+    ManualDBReview,
+    ManualDBReviewResult,
+)
 from app.orchestrator.lock import DuplicateActiveRun
+from app.review.manual_db import record_manual_db_review
 
 
 @unittest.skipUnless(
@@ -38,6 +44,58 @@ class PostgreSQLConcurrencyTests(unittest.TestCase):
         self.repo._execute(
             "UPDATE run_lock SET active_run_id=NULL, updated_at=NOW() WHERE name='weekend_report'"
         )
+
+    def test_manual_db_review_upsert_works_in_postgres(self):
+        run_id = "WR-20260909-130000"
+        self.repo.create_run(
+            started_by="tester",
+            run_id=run_id,
+        )
+        self.repo.claim_next_run("worker")
+        self.repo.mark_review_ready(
+            run_id,
+            CheckStatus.PASS,
+        )
+        first_id = record_manual_db_review(
+            self.repo,
+            ManualDBReview(
+                run_id=run_id,
+                display_name="Database Synchronization Check",
+                script_path=(
+                    "C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"
+                ),
+                result=ManualDBReviewResult.PASS,
+                comment="Synchronization verified.",
+                reviewer="alice",
+            ),
+        )
+        second_id = record_manual_db_review(
+            self.repo,
+            ManualDBReview(
+                run_id=run_id,
+                display_name="Database Synchronization Check",
+                script_path=(
+                    "C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"
+                ),
+                result=ManualDBReviewResult.FAIL,
+                comment="Synchronization failed on second review.",
+                reviewer="bob",
+            ),
+        )
+        self.assertEqual(first_id, second_id)
+        saved = self.repo.get_manual_db_review(run_id)
+        self.assertIsNotNone(saved)
+        assert saved is not None
+        self.assertEqual(
+            saved.result,
+            ManualDBReviewResult.FAIL,
+        )
+        self.assertEqual(
+            saved.comment,
+            "Synchronization failed on second review.",
+        )
+        self.assertEqual(saved.reviewer, "bob")
+        self.assertIsNotNone(saved.reviewed_at)
 
     def test_duplicate_run_prevention_is_atomic(self):
         successes: list[str] = []

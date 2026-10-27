@@ -7,7 +7,14 @@ from app.domain import CheckResult, CheckStatus
 from app.orchestrator.run_context import RunContext
 from app.time_utils import iso_now
 from app.validators.base import Validator
-from app.validators.engine import threshold_status
+
+QUEUE_FIELDS = ("ready", "unacked", "total")
+NODE_RESOURCE_FIELDS = (
+    "file_descriptors",
+    "socket_descriptors",
+    "erlang_processes",
+    "disk_space",
+)
 
 
 class RabbitMQValidator(Validator):
@@ -16,20 +23,6 @@ class RabbitMQValidator(Validator):
     ) -> list[CheckResult]:
         started = iso_now()
         results: list[CheckResult] = []
-        if actual.get("error"):
-            results.append(
-                _r(
-                    context.run_id,
-                    "collection",
-                    None,
-                    "rabbitmq",
-                    {"source": "RabbitMQ Management API", "read_only": True},
-                    actual,
-                    CheckStatus.ERROR,
-                    actual["error"],
-                    started,
-                )
-            )
         for error in actual.get("errors") or []:
             results.append(
                 _r(
@@ -45,9 +38,15 @@ class RabbitMQValidator(Validator):
                     metadata={"error_code": error.get("code")},
                 )
             )
-        expected_sites = resolve_rabbitmq_expected(config).get("sites", {})
+
+        expected_config = resolve_rabbitmq_expected(config)
+        expected_sites = expected_config.get("sites", {})
         actual_sites = actual.get("sites", {})
-        for site, expected in expected_sites.items():
+        collection_error_sites = {error.get("site") for error in actual.get("errors") or []}
+
+        for site in expected_sites:
+            if site in collection_error_sites:
+                continue
             observed = actual_sites.get(site)
             if not isinstance(observed, dict):
                 results.append(
@@ -65,296 +64,234 @@ class RabbitMQValidator(Validator):
                     )
                 )
                 continue
-            results.extend(_validate_site(context.run_id, site, expected, observed, started))
+            results.extend(_validate_site(context.run_id, site, expected_config, observed, started))
+
         return results
 
 
 def _validate_site(
     run_id: str,
     site: str,
-    expected: dict[str, Any],
+    expected_config: dict[str, Any],
     observed: dict[str, Any],
     started: str,
 ) -> list[CheckResult]:
     results: list[CheckResult] = []
-    vhosts = {v.get("name") for v in observed.get("vhosts", []) if isinstance(v, dict)}
-    for vhost in expected.get("vhosts", []):
-        if not isinstance(vhost, dict):
-            continue
-        name = str(vhost.get("name"))
-        exists = name in vhosts
-        results.append(
-            _existence_result(
-                run_id,
-                "vhost.exists",
-                site,
-                name,
-                vhost,
-                exists,
-                started,
-                missing_message="required vhost missing",
-                present_message="vhost exists",
-            )
-        )
-
-    queues = {
-        (q.get("vhost"), q.get("name")): q
-        for q in observed.get("queues", [])
-        if isinstance(q, dict)
-    }
-    for queue in expected.get("queues", []):
+    expected_queues = (expected_config.get("queues") or {}).get("expected", {})
+    queue_error_status = _status(
+        (expected_config.get("queues") or {}).get("nonzero_after_rechecks_status"),
+        CheckStatus.ERROR,
+    )
+    for queue in observed.get("queues", []):
         if not isinstance(queue, dict):
-            continue
-        name = str(queue.get("name"))
-        q = queues.get((queue.get("vhost"), queue.get("name")))
-        if q is None:
-            results.append(
-                _existence_result(
-                    run_id,
-                    "queue.exists",
-                    site,
-                    name,
-                    queue,
-                    False,
-                    started,
-                    missing_message="required queue missing",
-                    present_message="queue exists",
-                )
-            )
-            continue
-        results.append(
-            _existence_result(
-                run_id,
-                "queue.exists",
-                site,
-                name,
-                queue,
-                True,
-                started,
-                missing_message="required queue missing",
-                present_message="queue exists",
-            )
-        )
-        for prop in ["durable", "auto_delete", "exclusive"]:
-            if prop in queue:
-                status = CheckStatus.PASS if q.get(prop) == queue[prop] else CheckStatus.FAIL
-                results.append(
-                    _r(
-                        run_id,
-                        f"queue.{prop}",
-                        site,
-                        name,
-                        queue[prop],
-                        q.get(prop),
-                        status,
-                        f"queue {prop} "
-                        f"{'matches' if status == CheckStatus.PASS else 'mismatch'}",
-                        started,
-                    )
-                )
-        min_consumers = int(queue.get("min_consumers", 0))
-        consumers = int(q.get("consumers", 0))
-        status = CheckStatus.PASS if consumers >= min_consumers else CheckStatus.FAIL
-        results.append(
-            _r(
-                run_id,
-                "queue.consumers",
-                site,
-                name,
-                min_consumers,
-                consumers,
-                status,
-                "consumer count satisfies minimum"
-                if status == CheckStatus.PASS
-                else "consumers below minimum",
-                started,
-            )
-        )
-        metric = queue.get("backlog_metric", "messages")
-        messages = _numeric(q.get(metric, q.get("messages", 0)))
-        warning_messages = _numeric(queue.get("warning_messages", 0))
-        critical_messages = _numeric(queue.get("critical_messages", warning_messages))
-        status = threshold_status(
-            messages,
-            warning_messages,
-            critical_messages,
-        )
-        results.append(
-            _r(
-                run_id,
-                "queue.backlog",
-                site,
-                name,
-                {
-                    "metric": metric,
-                    "warning": warning_messages,
-                    "critical": critical_messages,
-                },
-                {metric: messages},
-                status,
-                f"{metric}={messages}",
-                started,
-            )
-        )
-
-    exchanges = {
-        (e.get("vhost"), e.get("name")): e
-        for e in observed.get("exchanges", [])
-        if isinstance(e, dict)
-    }
-    for exchange in expected.get("exchanges", []):
-        if not isinstance(exchange, dict):
-            continue
-        name = str(exchange.get("name"))
-        e = exchanges.get((exchange.get("vhost"), exchange.get("name")))
-        if e is None:
-            results.append(
-                _existence_result(
-                    run_id,
-                    "exchange.exists",
-                    site,
-                    name,
-                    exchange,
-                    False,
-                    started,
-                    missing_message="required exchange missing",
-                    present_message="exchange exists",
-                )
-            )
-            continue
-        results.append(
-            _existence_result(
-                run_id,
-                "exchange.exists",
-                site,
-                name,
-                exchange,
-                True,
-                started,
-                missing_message="required exchange missing",
-                present_message="exchange exists",
-            )
-        )
-        for prop in ["type", "durable", "auto_delete"]:
-            status = CheckStatus.PASS if e.get(prop) == exchange[prop] else CheckStatus.FAIL
             results.append(
                 _r(
                     run_id,
-                    f"exchange.{prop}",
+                    "queue.counts",
                     site,
-                    name,
-                    exchange[prop],
-                    e.get(prop),
-                    status,
-                    f"exchange {prop} "
-                    f"{'matches' if status == CheckStatus.PASS else 'mismatch'}",
+                    "malformed-queue",
+                    expected_queues,
+                    queue,
+                    CheckStatus.ERROR,
+                    "RABBITMQ_INVALID_RESPONSE: queue entry was not an object",
                     started,
+                    metadata={"error_code": "RABBITMQ_INVALID_RESPONSE"},
                 )
             )
-
-    binding_set = {
-        (
-            b.get("vhost"),
-            b.get("source"),
-            b.get("destination_type"),
-            b.get("destination"),
-            b.get("routing_key"),
-        )
-        for b in observed.get("bindings", [])
-        if isinstance(b, dict)
-    }
-    for binding in expected.get("bindings", []):
-        if not isinstance(binding, dict):
             continue
-        binding_key = (
-            binding.get("vhost"),
-            binding.get("source"),
-            binding.get("destination_type"),
-            binding.get("destination"),
-            binding.get("routing_key"),
-        )
-        exists = binding_key in binding_set
         results.append(
-            _existence_result(
-                run_id,
-                "binding.exists",
-                site,
-                str(binding.get("destination")),
-                binding,
-                exists,
-                started,
-                missing_message="required binding missing",
-                present_message="binding exists",
-            )
+            _queue_result(run_id, site, expected_queues, queue, queue_error_status, started)
         )
 
+    expected_nodes = (expected_config.get("nodes") or {}).get("expected", {})
+    node_error_status = _status(
+        (expected_config.get("nodes") or {}).get("unhealthy_status"),
+        CheckStatus.ERROR,
+    )
     for node in observed.get("nodes", []):
         if not isinstance(node, dict):
+            results.append(
+                _r(
+                    run_id,
+                    "node.resources",
+                    site,
+                    "malformed-node",
+                    expected_nodes,
+                    node,
+                    CheckStatus.ERROR,
+                    "RABBITMQ_INVALID_RESPONSE: node entry was not an object",
+                    started,
+                    metadata={"error_code": "RABBITMQ_INVALID_RESPONSE"},
+                )
+            )
             continue
-        if node.get("mem_alarm"):
-            results.append(
-                _r(
-                    run_id,
-                    "node.memory_alarm",
-                    site,
-                    node.get("name", "node"),
-                    {"alarm": False},
-                    {"alarm": True},
-                    CheckStatus.FAIL,
-                    "memory alarm active",
-                    started,
-                )
-            )
-        if node.get("disk_free_alarm"):
-            results.append(
-                _r(
-                    run_id,
-                    "node.disk_alarm",
-                    site,
-                    node.get("name", "node"),
-                    {"alarm": False},
-                    {"alarm": True},
-                    CheckStatus.FAIL,
-                    "disk alarm active",
-                    started,
-                )
-            )
+        results.extend(
+            _node_results(run_id, site, expected_nodes, node, node_error_status, started)
+        )
+
     return results
 
 
-def _numeric(value: Any) -> float:
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
-        return float(value)
-    return 0.0
-
-
-def _existence_result(
+def _queue_result(
     run_id: str,
-    check: str,
     site: str,
-    target: str,
     expected: dict[str, Any],
-    exists: bool,
+    queue: dict[str, Any],
+    nonzero_status: CheckStatus,
     started: str,
-    *,
-    missing_message: str,
-    present_message: str,
 ) -> CheckResult:
-    required = bool(expected.get("required", True))
-    status = CheckStatus.PASS if exists else CheckStatus.FAIL if required else CheckStatus.SKIPPED
+    target = _queue_target(queue)
+    counts = {field: _integer_or_none(queue.get(field)) for field in QUEUE_FIELDS}
+    if any(value is None for value in counts.values()):
+        return _r(
+            run_id,
+            "queue.counts",
+            site,
+            target,
+            expected,
+            queue,
+            CheckStatus.ERROR,
+            "RABBITMQ_INVALID_RESPONSE: reliable queue counts were unavailable",
+            started,
+            metadata={"error_code": "RABBITMQ_INVALID_RESPONSE"},
+        )
+    mismatches = {
+        field: {"expected": expected.get(field, 0), "actual": counts[field]}
+        for field in QUEUE_FIELDS
+        if counts[field] != expected.get(field, 0)
+    }
+    status = CheckStatus.PASS if not mismatches else nonzero_status
+    checks_performed = _checks_performed(queue)
     return _r(
         run_id,
-        check,
+        "queue.counts",
         site,
         target,
-        expected,
-        {"exists": exists, "required": required},
+        {
+            "ready": expected.get("ready", 0),
+            "unacked": expected.get("unacked", 0),
+            "total": expected.get("total", 0),
+        },
+        {
+            "site": site,
+            "queue": queue.get("name"),
+            "vhost": queue.get("vhost"),
+            "ready": counts["ready"],
+            "unacked": counts["unacked"],
+            "total": counts["total"],
+            "checks_performed": checks_performed,
+            "snapshots": queue.get("snapshots", []),
+        },
         status,
-        present_message if exists else missing_message if required else "optional topology absent",
+        "queue counts are all zero"
+        if status == CheckStatus.PASS
+        else "queue counts remained non-zero after configured rechecks",
         started,
+        metadata={"checks_performed": checks_performed},
     )
+
+
+def _node_results(
+    run_id: str,
+    site: str,
+    expected: dict[str, Any],
+    node: dict[str, Any],
+    unhealthy_status: CheckStatus,
+    started: str,
+) -> list[CheckResult]:
+    target = str(node.get("name") or node.get("node") or "node")
+    states = node.get("resource_states")
+    raw_metrics = node.get("raw_resource_metrics", {})
+    results: list[CheckResult] = []
+
+    if not isinstance(states, dict):
+        states = {}
+
+    for field in NODE_RESOURCE_FIELDS:
+        actual_state = states.get(field)
+        expected_state = expected.get(field, "green")
+
+        if isinstance(actual_state, str):
+            actual_state = actual_state.strip().lower()
+        if isinstance(expected_state, str):
+            expected_state = expected_state.strip().lower()
+
+        if actual_state == expected_state:
+            status = CheckStatus.PASS
+            message = f"{_label(field)} is green"
+        elif isinstance(actual_state, str) and actual_state:
+            status = unhealthy_status
+            message = f"{_label(field)} is unhealthy"
+        else:
+            status = CheckStatus.ERROR
+            message = (
+                f"RABBITMQ_NODE_HEALTH_MAPPING_UNRESOLVED: {_label(field)} green-state "
+                "mapping is not available from the collected API fields"
+            )
+
+        results.append(
+            _r(
+                run_id,
+                f"node.{field}",
+                site,
+                target,
+                {field: expected_state},
+                {
+                    field: actual_state,
+                    "node": target,
+                    "raw_resource_metrics": raw_metrics,
+                },
+                status,
+                message,
+                started,
+                metadata={
+                    "error_code": "RABBITMQ_NODE_HEALTH_MAPPING_UNRESOLVED"
+                    if status == CheckStatus.ERROR
+                    else None
+                },
+            )
+        )
+
+    return results
+
+
+def _queue_target(queue: dict[str, Any]) -> str:
+    name = str(queue.get("name") or "<unknown-queue>")
+    vhost = queue.get("vhost")
+    if isinstance(vhost, str) and vhost:
+        return f"{vhost}/{name}"
+    return name
+
+
+def _checks_performed(queue: dict[str, Any]) -> int:
+    checks = queue.get("checks_performed")
+    if isinstance(checks, int) and not isinstance(checks, bool) and checks > 0:
+        return checks
+    snapshots = queue.get("snapshots")
+    if isinstance(snapshots, list) and snapshots:
+        return len(snapshots)
+    return 1
+
+
+def _integer_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _status(value: Any, default: CheckStatus) -> CheckStatus:
+    try:
+        return CheckStatus(str(value))
+    except ValueError:
+        return default
+
+
+def _label(value: str) -> str:
+    return value.replace("_", " ").title()
 
 
 def _r(
@@ -370,6 +307,7 @@ def _r(
     *,
     metadata: dict[str, Any] | None = None,
 ) -> CheckResult:
+    cleaned_metadata = {k: v for k, v in (metadata or {}).items() if v is not None}
     return CheckResult(
         run_id,
         "rabbitmq",
@@ -382,5 +320,5 @@ def _r(
         actual=actual,
         started_at=started,
         finished_at=iso_now(),
-        metadata=metadata or {},
+        metadata=cleaned_metadata,
     )

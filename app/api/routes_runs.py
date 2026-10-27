@@ -6,18 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.api.dependencies import get_config, get_mutating_reviewer, get_repository, get_reviewer
-from app.auth import csrf_token_for_template
+from app.api.dependencies import get_config, get_mutation_guard, get_repository
 from app.config.validation import validate_config
+from app.domain import SYSTEM_ACTOR
 from app.orchestrator.lock import DuplicateActiveRun, InvalidRunTransition
 from app.runtime_identity import current_runtime_identity
+from app.security import csrf_token_for_template
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
 RepoDep = Annotated[Any, Depends(get_repository)]
 ConfigDep = Annotated[dict[str, Any], Depends(get_config)]
-ReviewerDep = Annotated[str, Depends(get_mutating_reviewer)]
-ReadReviewerDep = Annotated[str, Depends(get_reviewer)]
+MutationGuardDep = Annotated[None, Depends(get_mutation_guard)]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -25,7 +25,6 @@ def index(
     request: Request,
     repo: RepoDep,
     config: ConfigDep,
-    reviewer: ReadReviewerDep,
 ):
     preflight = validate_config(config)
     return templates.TemplateResponse(
@@ -35,7 +34,7 @@ def index(
             "request": request,
             "runs": repo.list_runs(),
             "preflight": preflight,
-            "csrf_token": csrf_token_for_template(reviewer),
+            "csrf_token": csrf_token_for_template(),
         },
     )
 
@@ -44,7 +43,7 @@ def index(
 def create_run(
     config: ConfigDep,
     repo: RepoDep,
-    reviewer: ReviewerDep,
+    _guard: MutationGuardDep,
 ):
     preflight = validate_config(config)
     if not preflight.ok:
@@ -52,7 +51,7 @@ def create_run(
     identity = current_runtime_identity(config)
     try:
         run = repo.create_run(
-            started_by=reviewer,
+            started_by=SYSTEM_ACTOR,
             application_version=identity.application_version,
             build_id=identity.build_id,
             git_commit=identity.git_commit,
@@ -67,7 +66,7 @@ def create_run(
 def create_run_form(
     config: ConfigDep,
     repo: RepoDep,
-    reviewer: ReviewerDep,
+    _guard: MutationGuardDep,
 ):
     preflight = validate_config(config)
     if not preflight.ok:
@@ -75,7 +74,7 @@ def create_run_form(
     identity = current_runtime_identity(config)
     try:
         run = repo.create_run(
-            started_by=reviewer,
+            started_by=SYSTEM_ACTOR,
             application_version=identity.application_version,
             build_id=identity.build_id,
             git_commit=identity.git_commit,
@@ -91,7 +90,7 @@ def resolve_recovery(
     run_id: str,
     payload: dict[str, Any],
     repo: RepoDep,
-    reviewer: ReviewerDep,
+    _guard: MutationGuardDep,
 ):
     note = str(payload.get("note", "")).strip()
     if not note:
@@ -100,7 +99,7 @@ def resolve_recovery(
             detail="Recovery resolution requires a note describing the verified cleanup.",
         )
     try:
-        run = repo.resolve_recovery(run_id, reviewer=reviewer, note=note)
+        run = repo.resolve_recovery(run_id, reviewer=SYSTEM_ACTOR, note=note)
     except InvalidRunTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"run_id": run.run_id, "state": run.state.value}

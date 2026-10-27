@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from app.config.loader import load_config_dir
 from app.database.repository import Repository
 from app.domain import CheckStatus
 from app.evidence.manager import EvidenceManager
 from app.orchestrator import runner
 from app.orchestrator.run_context import RunContext
 from app.orchestrator.runner import OrchestratorRunner
+from tests.fixtures.config_factory import load_fixture_config
 
 
 class FailingCollector:
@@ -23,7 +23,7 @@ class FailingCollector:
 
 class RunnerPolicyTests(unittest.TestCase):
     def test_if_unavailable_status_is_applied_to_module_error(self):
-        config = copy.deepcopy(load_config_dir("tests/fixtures/config_valid"))
+        config = copy.deepcopy(load_fixture_config())
         for name, rule in config["rules"]["modules"].items():
             rule["enabled"] = name == "portainer"
             rule["required"] = name == "portainer"

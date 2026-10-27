@@ -1,0 +1,6 @@
+services:
+  web:
+    # Reverse-proxy mode. Authentication settings come from env/app.env.
+    # The reverse proxy is expected to run on the same host.
+    ports:
+      - "127.0.0.1:8080:8080"

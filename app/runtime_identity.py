@@ -4,8 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from app.auth import UNSET_RUNTIME_VALUES
-
+UNSET_RUNTIME_VALUES = {"", "<TBD>", "<TO_VERIFY>", "UNKNOWN"}
 LOCAL_APP_VERSION = "0.1.0-local"
 LOCAL_BUILD_ID = "LOCAL-FOLDER"
 GIT_NOT_APPLICABLE = "<NOT_APPLICABLE>"
@@ -20,13 +19,9 @@ class RuntimeIdentity:
 
 
 def current_runtime_identity(config: dict[str, Any]) -> RuntimeIdentity:
-    production = _is_production_auth_mode()
-    application_version = os.getenv("WEEKEND_REPORT_APP_VERSION", "").strip()
-    build_id = os.getenv("WEEKEND_REPORT_BUILD_ID", "").strip()
+    application_version = os.getenv("WEEKEND_REPORT_APP_VERSION", "").strip() or LOCAL_APP_VERSION
+    build_id = os.getenv("WEEKEND_REPORT_BUILD_ID", "").strip() or LOCAL_BUILD_ID
     git_commit = os.getenv("WEEKEND_REPORT_GIT_COMMIT", "").strip()
-    if not production:
-        application_version = application_version or LOCAL_APP_VERSION
-        build_id = build_id or LOCAL_BUILD_ID
     return RuntimeIdentity(
         application_version=application_version,
         build_id=build_id,
@@ -40,22 +35,17 @@ def runtime_identity_errors(
     *,
     production_preflight: bool = True,
 ) -> list[str]:
-    if not production_preflight or not _is_production_auth_mode():
+    if not production_preflight:
         return []
-    identity = current_runtime_identity(config)
+
     errors: list[str] = []
-    if _is_unset(identity.application_version):
+    if _is_unset(os.getenv("WEEKEND_REPORT_APP_VERSION")):
         errors.append("WEEKEND_REPORT_APP_VERSION must be set for production traceability")
-    if _is_unset(identity.build_id):
+    if _is_unset(os.getenv("WEEKEND_REPORT_BUILD_ID")):
         errors.append("WEEKEND_REPORT_BUILD_ID must be set for production traceability")
-    if _is_unset(identity.configuration_hash):
+    if _is_unset(str(config.get("_config_hash", ""))):
         errors.append("configuration hash could not be calculated for the effective config")
     return errors
-
-
-def _is_production_auth_mode() -> bool:
-    mode = os.getenv("WEEKEND_REPORT_AUTH_MODE", "development").strip().lower()
-    return mode == "production"
 
 
 def _is_unset(value: str | None) -> bool:

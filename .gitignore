@@ -19,3 +19,11 @@ data/
 
 dist/
 .venv/
+
+# Local production authentication / TLS material
+deploy/docker/secrets/
+deploy/docker/tls/
+deploy/docker/.env
+deploy/docker/env/*.env
+!deploy/docker/env/*.env.example
+deploy/docker/images/

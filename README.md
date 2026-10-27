@@ -1,10 +1,12 @@
 # Weekend Report Automation
 
-**Documentation synchronized:** 2026-08-23
+**Documentation synchronized:** 2026-09-06
 
 Weekend Report Automation is a manually triggered operational-validation application built with Python 3.14, FastAPI, a persistent worker, PostgreSQL, filesystem evidence storage, HTML review pages, immutable review snapshots, and one final PDF generated only after explicit human confirmation.
 
-The application is intentionally configuration-driven. The default `config/` directory is a production template containing controlled placeholders. It is expected to fail production preflight until the real environment values and policies are supplied and approved.
+The application is intentionally configuration-driven. The Docker image contains code only; deployment
+values come from external ENV files/secrets, and business validation policy comes from read-only
+`rules.yml`.
 
 ## Current Operating Model
 
@@ -50,7 +52,7 @@ The Weekend Report itself is never scheduled by GitHub Actions or GitLab CI/CD.
 - **worker**: persistent Python process that atomically claims `CREATED` runs and executes the orchestrator.
 - **database**: PostgreSQL in deployment; SQLite is used by safe local fixture tests.
 - **evidence**: persistent run evidence under the configured evidence root.
-- **configuration**: YAML expected state and policy under `config/`.
+- **configuration**: read-only `rules.yml` policy plus runtime ENV/secrets supplied outside the image.
 - **reporting**: frozen snapshot first, then exactly one final PDF rendered from that snapshot.
 - **traceability**: `application_version`, `build_id`, deterministic `configuration_hash`, plus optional Git commit metadata when available.
 
@@ -103,7 +105,8 @@ python scripts/ci.py postgres
 
 Never point that gate at a production/shared database.
 
-The production-template part of `python scripts/ci.py config` intentionally prints unresolved `<TBD>` / `<TO_VERIFY>` errors and finishes with:
+The expected-invalid part of `python scripts/ci.py config` intentionally proves unresolved
+deployment ENV does not pass production preflight and finishes with:
 
 ```text
 Configuration invalid as expected
@@ -223,8 +226,8 @@ TAG
 .github/workflows/quality-gates.yml
 .github/workflows/build-image.yml
 .gitlab-ci.yml
-.gitlab/ci/quality.yml
-.gitlab/ci/image.yml
+.gitlab-ci-cd/quality.yml
+.gitlab-ci-cd/image.yml
 deploy/docker/compose.ci.yml
 scripts/ci.py
 scripts/ci_e2e.py
@@ -235,10 +238,19 @@ GitHub Actions is usable now. GitLab CI/CD remains ready for later import/use on
 
 ## Configuration
 
-Secrets belong in a non-committed `.env`, Docker secrets, or another approved secret mechanism.
-Production Compose selects the already-built or loaded image with `WEEKEND_REPORT_IMAGE`.
-For local development this can remain `weekend-report:local`; for a verified release it should
-point at a loaded versioned image such as `weekend-report:v1.0.2`.
+Secrets and deployment values belong in non-committed ENV files under `deploy/docker/env/`, Docker
+secrets, or another approved secret mechanism. Production Compose selects the already-built or loaded
+image with `WEEKEND_REPORT_IMAGE`; for a verified release it should point at a loaded versioned image
+such as `weekend-report:v1.0.2`.
+
+Policy remains in YAML:
+
+```text
+deploy/docker/config/rules.yml
+```
+
+Deployment inventory, endpoints, and environment-specific targets are supplied through runtime ENV files.
+The application does not use per-module deployment YAML for those values.
 
 Do not put credentials in YAML, fixtures, documentation, image layers, or CI artifacts.
 
@@ -254,28 +266,30 @@ Real runs must stay blocked while required production values are unresolved.
 
 The framework supports the following module boundaries, but real environment enablement remains controlled:
 
-- Portainer: read-only Docker Swarm Service inspection.
-- RabbitMQ: Management API topology/metrics validation.
-- Infrastructure: read-only SSH/command collection for filesystem, NFS, and Chrony.
-- Database: adapter boundary for the owner-supplied existing sync function.
-- DOCTOR: manual or approved API mode.
+- Portainer: read-only Docker Swarm service discovery, independent site health, and cross-site parity.
+- RabbitMQ: read-only Management API queue and node-health validation.
+- Infrastructure: read-only SSH runs `df -h | grep mapper` on every configured server in
+  every site. Every discovered mapper filesystem is checked independently; no device
+  inventory or `/` mount is required. Usage below 70% is PASS, >= 70% and < 80% is
+  WARNING, and >= 80% is FAIL. No matches (grep exit 1 with no diagnostics) is FAIL;
+  technical collection or parsing failures are ERROR. Chrony/NTP checks are unchanged.
+- DOCTOR: dynamic cross-site service validation and live Health Checks UI `doctor-api` collection are implemented.
 - Splunk: human dashboard review.
-- Recording: existing-device start/stop workflow with strict cleanup/recovery safety.
 
-Do not enable any live integration until the required environment values, expected state, authentication, evidence policy, and status semantics are approved.
+Do not enable any live integration until the required environment values, expected state, integration credentials, evidence policy, and status semantics are approved.
 
 ## Review and Finalization
 
-Production pages require authenticated/authorized access except health endpoints.
+Weekend Report does not implement an application login or user-account boundary. Control network exposure at the deployment layer.
 
-Browser mutations use reviewer-bound signed CSRF tokens.
+Browser mutations use signed CSRF tokens when the CSRF signing key is configured; production preflight requires the key.
 
 Reviewer notes are additive and never rewrite machine findings.
 
 Final confirmation:
 
 1. validates readiness policy;
-2. freezes results, evidence references, notes, summaries, reviewer identity, decision, and traceability;
+2. freezes results, evidence references, notes, summaries, the manually entered reviewer name, decision, and traceability;
 3. writes `review_snapshot.json`;
 4. renders exactly one final PDF from that immutable snapshot;
 5. records the PDF path and checksum.
@@ -284,9 +298,42 @@ See:
 
 - `docs/ARCHITECTURE.md`
 - `docs/CI_CD.md`
-- `docs/CONFIGURATION_GUIDE.md`
-- `docs/ENVIRONMENT_INPUTS_REQUIRED.md`
-- `docs/PORTABLE_DEPLOYMENT.md`
+- `docs/CONFIGURATION.md`
+- `docs/DEPLOYMENT.md`
 - `docs/RECOVERY_POLICY.md`
 - `docs/VALIDATION_CATALOG.md`
-- `docs/PROJECT_BUILD_REPORT.md`
+
+## Dynamic runtime sites
+
+`SITE_COUNT=N` defines the runtime inventory, where N is any positive integer.
+One-site deployments and multi-site deployments use the same application. Define
+`SITE<N>_ID`, `SITE<N>_DISPLAY_NAME`, and `SITE<N>_PURPOSE` for each site from 1 through N.
+IDs must be non-empty and unique. Module-specific numbered ENV variables use the same
+number: for example, `DOCTOR_SITE3_API_URL` belongs to `SITE3_ID`.
+
+Every site receives independent Portainer, DOCTOR, RabbitMQ, and Infrastructure validation.
+Only when `SITE_COUNT > 1` does configured cross-site parity run afterward. A single-site
+run produces no parity result, blocking SKIPPED status, or parity evidence and can be
+approved once its actual checks and review requirements pass. Parity never overrides
+independent site health. Splunk and manual DB review remain independent of site count.
+
+The checked-in two-site examples remain valid. Add or remove numbered blocks in every
+module ENV file to match `SITE_COUNT`; no code change or fixed maximum inventory is needed.
+See [configuration patterns and allowed differences](docs/CONFIGURATION.md#dynamic-site-inventory-and-parity).
+
+
+### Infrastructure SSH credentials and host trust
+
+Infrastructure authenticates with username/password through Paramiko 5.0.1 and
+verifies servers against a pre-verified, read-only `known_hosts` file.
+
+```dotenv
+SSH_USERNAME=weekend_report
+SSH_PASSWORD=<secret>
+SSH_KNOWN_HOSTS_PATH=/app/secrets/known_hosts
+```
+
+Keep the real password in runtime `env/infrastructure.env` and never commit it.
+No SSH private key is required. Unknown/changed keys fail with ERROR; trust is never
+automatically enrolled. See [configuration](docs/CONFIGURATION.md#infrastructure-ssh-credentials-and-host-trust)
+and [deployment](docs/DEPLOYMENT.md#infrastructure-ssh-credentials-and-host-trust).

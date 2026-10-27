@@ -307,8 +307,7 @@ h4 {
 .service-header,
 .dashboard-card-head,
 .note-card-head,
-.comparison-site-heading,
-.workflow-step-head {
+.comparison-site-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -732,6 +731,14 @@ button:disabled {
   color: #34404a;
 }
 
+.check-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #34404a;
+  font-weight: 800;
+}
+
 .result-note {
   margin-top: 12px;
 }
@@ -774,7 +781,7 @@ button:disabled {
 
 .comparison-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 12px;
   margin: 14px 0;
 }
@@ -826,24 +833,6 @@ button:disabled {
   border-radius: 8px;
   padding: 8px 10px;
   background: #fff7f5;
-}
-
-.workflow-steps {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.workflow-step {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px 12px 12px 18px;
-  background: #fbfcfc;
-}
-
-.workflow-step p {
-  margin: 8px 0;
-  color: var(--muted);
 }
 
 .infra-grid {
@@ -1062,7 +1051,6 @@ button:disabled {
   .dashboard-grid,
   .module-note-grid,
   .comparison-grid,
-  .workflow-steps,
   .infra-grid,
   .recovery-grid,
   .decision-grid,
@@ -1079,8 +1067,7 @@ button:disabled {
   .summary-row,
   .run-row,
   .comparison-site-heading,
-  .result-card-main,
-  .workflow-step-head {
+  .result-card-main {
     align-items: flex-start;
     flex-direction: column;
   }

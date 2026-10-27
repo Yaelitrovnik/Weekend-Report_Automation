@@ -39,6 +39,8 @@ def save_splunk_note(
     dashboard_id: str,
     reviewer: str,
     note_text: str,
+    *,
+    reviewed: bool = False,
 ) -> int:
     repository.require_note_editable(run_id)
     dashboard_ids = {
@@ -55,6 +57,7 @@ def save_splunk_note(
             reviewer,
             note_text,
             dashboard_id=dashboard_id,
+            reviewed=reviewed,
         )
     )
 

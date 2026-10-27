@@ -62,6 +62,7 @@ def render_final_html(snapshot: dict[str, Any]) -> str:
         )
         parts.append(
             f"<p>[{html.escape(note['scope'])}] {html.escape(str(target))}: "
+            f"reviewed={html.escape(str(note.get('reviewed', False)))}; "
             f"{html.escape(note['note'])}</p>"
         )
     parts.append("<h2>Splunk Dashboards</h2>")

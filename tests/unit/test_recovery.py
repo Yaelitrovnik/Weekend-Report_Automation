@@ -24,7 +24,7 @@ class RecoveryTests(unittest.TestCase):
             (module, old, iso_now(), run_id),
         )
 
-    def test_non_recording_stale_run_fails_without_replay(self):
+    def test_stale_run_fails_without_replay(self):
         self.stale_running_run("WR-20260811-000000", "portainer")
         recovered = self.repo.recover_stale_runs(heartbeat_timeout_seconds=60, worker_id="worker-b")
         self.assertEqual(len(recovered), 1)
@@ -33,28 +33,23 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(run.automation_status, CheckStatus.ERROR)
         self.assertIn("without replay", run.current_module)
 
-    def test_recording_stale_run_requires_manual_recovery(self):
-        self.stale_running_run("WR-20260811-000000", "recording")
-        recovered = self.repo.recover_stale_runs(heartbeat_timeout_seconds=60, worker_id="worker-b")
-        self.assertEqual(len(recovered), 1)
-        run = self.repo.get_run("WR-20260811-000000")
-        self.assertEqual(run.state, RunState.RECOVERY_REQUIRED)
-        self.assertEqual(run.automation_status, CheckStatus.ERROR)
-        self.assertIn("manual cleanup", run.current_module)
-
     def test_recovery_required_blocks_until_explicitly_resolved(self):
-        self.stale_running_run("WR-20260811-000000", "recording")
-        self.repo.recover_stale_runs(heartbeat_timeout_seconds=60, worker_id="worker-b")
+        self.repo.create_run(started_by="tester", run_id="WR-20260811-000000")
+        self.repo.claim_next_run("worker-a")
+        self.repo.mark_recovery_required(
+            "WR-20260811-000000",
+            "manual recovery required by generic recovery policy",
+        )
         with self.assertRaises(DuplicateActiveRun):
             self.repo.create_run(started_by="tester", run_id="WR-20260811-000001")
 
         resolved = self.repo.resolve_recovery(
             "WR-20260811-000000",
             reviewer="operator",
-            note="verified Recording cleanup in target environment",
+            note="verified cleanup in target environment",
         )
         self.assertEqual(resolved.state, RunState.FAILED)
-        self.assertIn("no Recording replay", resolved.current_module)
+        self.assertIn("no automatic replay", resolved.current_module)
         new_run = self.repo.create_run(started_by="tester", run_id="WR-20260811-000001")
         self.assertEqual(new_run.state, RunState.CREATED)
 
@@ -73,8 +68,7 @@ class RecoveryPolicyDocTests(unittest.TestCase):
         for required in (
             "Stale-Worker Definition",
             "Heartbeat Timeout",
-            "Non-Recording Stale-Run Behavior",
-            "Recording Stale-Run Behavior",
+            "Stale-Run Behavior",
             "`RECOVERY_REQUIRED`",
             "No Automatic Replay",
             "Human Cleanup / Recovery Procedure",
