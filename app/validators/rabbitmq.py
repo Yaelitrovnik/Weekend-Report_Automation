@@ -216,6 +216,9 @@ def _node_results(
         if isinstance(expected_state, str):
             expected_state = expected_state.strip().lower()
 
+        error_code = None
+        if field == "socket_descriptors" and raw_metrics.get("sockets_total") == 0:
+            actual_state = None
         if actual_state == expected_state:
             status = CheckStatus.PASS
             message = f"{_label(field)} is green"
@@ -224,10 +227,13 @@ def _node_results(
             message = f"{_label(field)} is unhealthy"
         else:
             status = CheckStatus.ERROR
-            message = (
-                f"RABBITMQ_NODE_HEALTH_MAPPING_UNRESOLVED: {_label(field)} green-state "
-                "mapping is not available from the collected API fields"
+            error_code = "RABBITMQ_NODE_METRIC_UNAVAILABLE"
+            reason = (
+                "capacity is zero; utilization cannot be calculated"
+                if (field == "socket_descriptors" and raw_metrics.get("sockets_total") == 0)
+                else "measurement is missing, null or invalid"
             )
+            message = f"{error_code}: {_label(field)} {reason}"
 
         results.append(
             _r(
@@ -244,11 +250,7 @@ def _node_results(
                 status,
                 message,
                 started,
-                metadata={
-                    "error_code": "RABBITMQ_NODE_HEALTH_MAPPING_UNRESOLVED"
-                    if status == CheckStatus.ERROR
-                    else None
-                },
+                metadata={"error_code": error_code},
             )
         )
 

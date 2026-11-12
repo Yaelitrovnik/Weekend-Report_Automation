@@ -98,7 +98,7 @@
           </div>
           <a class="button button-secondary" href="/runs/{{ run.run_id }}/{{ panel.module }}">Open HTML</a>
           <label class="note-field">
-            <span>Module note</span>
+            <span>Module note {% if panel.module in review_policy.get("required_module_notes", []) %}<strong class="required-label">Required to approve</strong>{% endif %}</span>
             <textarea
               data-note-endpoint="/api/runs/{{ run.run_id }}/notes/module/{{ panel.module }}"
               name="note-{{ panel.module }}">{{ panel.note }}</textarea>
@@ -136,7 +136,7 @@
             <span>Dashboard reviewed</span>
           </label>
           <label class="note-field">
-            <span>Dashboard note</span>
+            <span>Dashboard note {% if dashboard.note_required %}<strong class="required-label">Required</strong>{% endif %}</span>
             <textarea
               data-note-endpoint="/api/runs/{{ run.run_id }}/notes/splunk/{{ dashboard.id }}"
               name="splunk-{{ dashboard.id }}">{{ dashboard.note }}</textarea>
@@ -155,7 +155,7 @@
       </span>
     </summary>
     <label class="note-field">
-      <span>General note</span>
+      <span>General note {% if review_policy.get("general_note_required") %}<strong class="required-label">Required to approve</strong>{% endif %}</span>
       <textarea
         data-note-endpoint="/api/runs/{{ run.run_id }}/notes/general"
         name="general-note">{{ notes_by_key.get("general", "") }}</textarea>
@@ -197,47 +197,18 @@
   </div>
 
   <p class="panel-copy">
-    Run this PowerShell script locally on the reviewer workstation.
-    Weekend Report does not execute the script on the server.
+    Execute the database synchronization check manually outside Weekend Report,
+    then record the result below. Weekend Report does not execute this script.
   </p>
 
   <div class="note-card">
     <div class="note-card-head">
-      <strong>Local script</strong>
+      <strong>Script location (reference only)</strong>
       {% if manual_db_check.required %}
         <span>Required before final decision</span>
       {% endif %}
     </div>
-
-    <p>
-      <code>{{ manual_db_check.script_path }}</code>
-    </p>
-
-    <p>
-      <code data-manual-db-command>{{ manual_db_check.powershell_command }}</code>
-    </p>
-
-    <div class="action-bar">
-      <button
-        class="button button-secondary"
-        type="button"
-        data-action="copy-manual-db-command"
-      >
-        Copy PowerShell Command
-      </button>
-
-      <a
-        class="button button-secondary"
-        href="{{ manual_db_check.file_uri }}"
-      >
-        Open Local Script
-      </a>
-    </div>
-
-    <p class="panel-copy">
-      The local-file link depends on browser security policy.
-      The copyable PowerShell command is the supported fallback.
-    </p>
+    <p><code>{{ manual_db_check.script_path }}</code></p>
   </div>
 
   <div
@@ -326,16 +297,39 @@
       >
     </label>
   {% endif %}
+  {% if not can_finalize %}
+    <p class="review-blocker">Finalization requires REVIEW_READY. Current state: {{ run.state }}.</p>
+  {% elif snapshot_frozen %}
+    <p class="review-blocker">The snapshot is frozen. Retry PDF generation using the original reviewer and decision. Notes cannot be changed.</p>
+  {% endif %}
+  {% if can_finalize and not snapshot_frozen %}
+    <div class="split-grid embedded">
+      <div><h3>APPROVE requirements</h3>
+        {% if approval_blockers %}<ul class="blocker-list">{% for reason in approval_blockers %}<li>{{ reason }}</li>{% endfor %}</ul>
+        {% else %}<p>Saved review requirements are satisfied.</p>{% endif %}
+      </div>
+      <div><h3>REJECT requirements</h3>
+        <p>A rejection reason and reviewer name are required. A database PASS allows rejection.</p>
+        {% if rejection_blockers %}<ul class="blocker-list">{% for reason in rejection_blockers %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    <p class="panel-copy">Requirements reflect saved notes. Final confirmation saves your current notes and checks the policy again.</p>
+  {% endif %}
+  {% if run.rejection_reason %}<p><strong>Rejection reason:</strong> {{ run.rejection_reason }}</p>{% endif %}
+  <label class="note-field">
+    <span>Rejection reason <strong class="required-label">Required for REJECT</strong></span>
+    <textarea data-rejection-reason maxlength="10000" {% if not can_finalize %}disabled{% endif %}>{{ run.rejection_reason or "" }}</textarea>
+  </label>
   <div class="decision-grid" role="radiogroup" aria-label="Final review decision">
     <label class="decision-card approve-card">
-      <input type="radio" name="review-decision" value="APPROVE">
+      <input type="radio" name="review-decision" value="APPROVE" {% if not can_finalize %}disabled{% endif %}>
       <span>
         <strong>APPROVE</strong>
         <small>Accept the run with the automated findings and saved notes.</small>
       </span>
     </label>
     <label class="decision-card reject-card">
-      <input type="radio" name="review-decision" value="REJECT">
+      <input type="radio" name="review-decision" value="REJECT" {% if not can_finalize or not review_policy.get("reject_allowed", true) %}disabled{% endif %}>
       <span>
         <strong>REJECT</strong>
         <small>Reject the run and preserve the findings, notes, and decision.</small>
@@ -346,7 +340,7 @@
     Confirm once more to freeze the review snapshot and generate the single final PDF.
   </div>
   <div class="action-bar">
-    <button class="button button-primary" type="button" data-action="finalize" data-run-id="{{ run.run_id }}">Final Confirmation</button>
+    <button class="button button-primary" type="button" data-action="finalize" data-run-id="{{ run.run_id }}" {% if not can_finalize %}disabled{% endif %}>Final Confirmation</button>
     <span data-final-pdf-slot>
       {% if run.final_pdf_path %}
         <a class="button button-secondary" href="/api/runs/{{ run.run_id }}/final-pdf">OPEN FINAL PDF</a>

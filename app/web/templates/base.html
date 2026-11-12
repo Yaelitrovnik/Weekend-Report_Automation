@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/app.css">
   <meta name="weekend-report-csrf-token" content="{{ csrf_token | default('') }}">
 </head>
-<body>
+<body {% if run is defined and run and (run.final_snapshot_path or (run.state|string) != "REVIEW_READY") %}data-review-readonly{% endif %}>
   {% import "_macros.html" as ui %}
   <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="app-shell">

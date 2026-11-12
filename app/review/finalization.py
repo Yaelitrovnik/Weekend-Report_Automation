@@ -84,6 +84,7 @@ def enforce_finalization_readiness(
     if errors:
         raise FinalizationReadinessError(errors)
 
+
 def _manual_db_review_errors(
     repository,
     config: dict[str, Any],
@@ -104,15 +105,10 @@ def _manual_db_review_errors(
     if manual_config.get("required") is not True:
         return []
 
-    review = repository.get_manual_db_review(
-        run_id
-    )
+    review = repository.get_manual_db_review(run_id)
 
     if review is None:
-        return [
-            "Manual Database Synchronization Check "
-            "must be completed before finalization."
-        ]
+        return ["Manual Database Synchronization Check must be completed before finalization."]
 
     if not review.comment.strip():
         return [
@@ -131,26 +127,10 @@ def _manual_db_review_errors(
         return []
 
     if decision == ReviewDecision.REJECT:
-        if review.result == ManualDBReviewResult.PASS:
-            return [
-                "REJECT is not permitted when Manual Database "
-                "Synchronization Check result is PASS."
-            ]
+        return []
 
-        if review.result in {
-            ManualDBReviewResult.FAIL,
-            ManualDBReviewResult.NOT_RUN,
-        }:
-            return []
+    return ["Unsupported final review decision."]
 
-        return [
-            "REJECT requires Manual Database Synchronization "
-            "Check result FAIL or NOT RUN."
-        ]
-
-    return [
-        "Unsupported final review decision."
-    ]
 
 def _review_config(config: dict[str, Any]) -> dict[str, Any]:
     review = config.get("rules", {}).get("review", {})

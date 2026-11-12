@@ -48,11 +48,25 @@ def finalize(
     try:
         decision = ReviewDecision(payload["decision"])
         reviewer = _manual_reviewer_name(payload)
-        snapshot = finalize_run(repo, evidence, config, run_id, reviewer, decision)
+        snapshot = finalize_run(
+            repo,
+            evidence,
+            config,
+            run_id,
+            reviewer,
+            decision,
+            rejection_reason=payload.get("rejection_reason"),
+        )
     except FinalizationReadinessError as exc:
         raise HTTPException(status_code=400, detail=exc.errors) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        headers = {}
+        try:
+            if repo.get_run(run_id).final_snapshot_path:
+                headers["X-Review-Snapshot-Frozen"] = "1"
+        except KeyError:
+            pass
+        raise HTTPException(status_code=400, detail=str(exc), headers=headers) from exc
     return {
         "run_id": run_id,
         "decision": decision.value,

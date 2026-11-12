@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from app.domain import ReviewDecision, RunState, to_jsonable
 from app.evidence.manager import EvidenceManager
+from app.evidence.redaction import sanitize
+from app.observability import event
 from app.orchestrator.aggregation import aggregate_status, module_summaries, site_summaries
 from app.reporting.final_pdf import render_pdf_under
 from app.review.finalization import enforce_finalization_readiness
@@ -39,7 +42,11 @@ def build_snapshot(
             "final_decision": decision.value,
         }
     snapshot = {
-        "snapshot_version": 2,
+        "snapshot_version": 3,
+        "parity_status": "NOT_APPLICABLE"
+        if len(config.get("sites", {}).get("sites", [])) == 1
+        else "APPLICABLE",
+        "sites": config.get("sites", {}).get("sites", []),
         "created_at": iso_now(),
         "run": to_jsonable(run),
         "results": to_jsonable(results),
@@ -95,22 +102,94 @@ def finalize_run(
     decision: ReviewDecision,
     *,
     fail_pdf: bool = False,
+    rejection_reason: str | None = None,
 ) -> dict[str, Any]:
-    repository.require_review_ready(run_id)
-    enforce_finalization_readiness(repository, config, run_id, decision)
-    snapshot = build_snapshot(repository, run_id, config, reviewer, decision)
-    snapshot_path, _snapshot_checksum = freeze_snapshot(repository, evidence, snapshot)
-    if fail_pdf:
-        raise RuntimeError(f"PDF generation failed after snapshot freeze: {snapshot_path}")
-    pdf_rel = f"runs/{run_id}/final/weekend-report-{run_id}.pdf"
-    pdf_path, checksum = render_pdf_under(evidence.root, snapshot, pdf_rel)
-    state = RunState.APPROVED if decision == ReviewDecision.APPROVE else RunState.REJECTED
-    repository.set_final_pdf(
-        run_id,
-        state=state,
-        reviewer=reviewer,
-        decision=decision.value,
-        pdf_path=Path(pdf_path).relative_to(evidence.root).as_posix(),
-        checksum=checksum,
-    )
+    if not isinstance(reviewer, str) or not reviewer.strip() or len(reviewer) > 100:
+        raise ValueError("Reviewer name is required and must be at most 100 characters")
+    if any(char in reviewer for char in ("\r", "\n", "\x00")):
+        raise ValueError("Reviewer name contains unsupported characters")
+    reviewer = reviewer.strip()
+    failure = None
+    with repository.finalization_lock, repository.transaction():
+        if repository.backend == "postgres":
+            repository._execute("SELECT run_id FROM runs WHERE run_id=? FOR UPDATE", (run_id,))
+        run = repository.require_review_ready(run_id)
+        if run.final_snapshot_path:
+            snapshot = json.loads(
+                evidence.absolute(run.final_snapshot_path).read_text(encoding="utf-8")
+            )
+            if (
+                snapshot["review"]["decision"] != decision.value
+                or snapshot["review"]["reviewer"] != reviewer
+            ):
+                raise ValueError(
+                    "Snapshot is frozen; retry with the original reviewer and decision"
+                )
+            if rejection_reason is not None and (
+                not isinstance(rejection_reason, str)
+                or sanitize(rejection_reason.strip())
+                != snapshot["review"].get("rejection_reason")
+            ):
+                raise ValueError("Snapshot is frozen; rejection reason cannot change")
+        else:
+            enforce_finalization_readiness(repository, config, run_id, decision)
+            reason = rejection_reason
+            if decision == ReviewDecision.REJECT:
+                if reason is None:
+                    reason = next(
+                        (
+                            note.note
+                            for note in repository.list_notes(run_id)
+                            if note.scope.value == "GENERAL"
+                        ),
+                        "",
+                    )
+                if not isinstance(reason, str) or not reason.strip() or len(reason) > 10000:
+                    raise ValueError(
+                        "REJECT requires a non-empty rejection reason (at most 10000 characters)"
+                    )
+            else:
+                reason = None
+            snapshot = build_snapshot(repository, run_id, config, reviewer.strip(), decision)
+            snapshot["review"]["rejection_reason"] = sanitize(reason.strip() if reason else None)
+            state = RunState.APPROVED if decision == ReviewDecision.APPROVE else RunState.REJECTED
+            snapshot["run"].update(
+                {
+                    "state": state.value,
+                    "reviewed_by": reviewer.strip(),
+                    "review_decision": decision.value,
+                    "reviewed_at": snapshot["review"]["confirmed_at"],
+                    "rejection_reason": snapshot["review"]["rejection_reason"],
+                }
+            )
+            snapshot = sanitize(snapshot)
+            freeze_snapshot(repository, evidence, snapshot)
+        try:
+            if fail_pdf:
+                raise RuntimeError("PDF generation failed after snapshot freeze")
+            pdf_rel = f"runs/{run_id}/final/weekend-report-{run_id}.pdf"
+            pdf_path, checksum = render_pdf_under(evidence.root, snapshot, pdf_rel)
+        except Exception as exc:
+            failure = exc
+        else:
+            state = RunState.APPROVED if decision == ReviewDecision.APPROVE else RunState.REJECTED
+            repository.set_final_pdf(
+                run_id,
+                state=state,
+                reviewer=reviewer.strip(),
+                decision=decision.value,
+                pdf_path=Path(pdf_path).relative_to(evidence.root).as_posix(),
+                checksum=checksum,
+                rejection_reason=snapshot["review"].get("rejection_reason"),
+                reviewed_at=snapshot["review"]["confirmed_at"],
+            )
+    if failure is not None:
+        event(
+            "report_render_error",
+            run_id=run_id,
+            severity="ERROR",
+            error_type=type(failure).__name__,
+        )
+        raise failure
+    event("review_finalized", run_id=run_id, decision=decision.value)
     return snapshot

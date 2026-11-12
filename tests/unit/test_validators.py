@@ -44,9 +44,7 @@ class ValidatorTests(unittest.TestCase):
     def test_infrastructure_filesystem_threshold_and_chrony_unsynced(self):
         config = load_fixture_config()
         actual = copy.deepcopy(config["servers"]["fixture_actual"])
-        actual["sites"]["site1"]["servers"]["srv1"]["df"] = (
-            "/dev/mapper/vg-root 100G 75G 25G 75% /"
-        )
+        actual["sites"]["site1"]["servers"]["srv1"]["df"] = "/dev/mapper/vg-root 100G 75G 25G 75% /"
         actual["sites"]["site2"]["servers"]["srv2"]["chrony"]["synchronized"] = False
         results = InfrastructureValidator().validate(actual, config, self.context(config))
         self.assertIn(
@@ -87,9 +85,7 @@ class ValidatorTests(unittest.TestCase):
         server["df_error"] = "SSH connection failed"
         results = InfrastructureValidator().validate(actual, config, self.context(config))
         reachability = [
-            r
-            for r in results
-            if r.check_id == "infrastructure.ssh.reachable" and r.site == "site1"
+            r for r in results if r.check_id == "infrastructure.ssh.reachable" and r.site == "site1"
         ][0]
         self.assertEqual(reachability.status, CheckStatus.ERROR)
         self.assertEqual(reachability.actual["reachable"], False)
@@ -103,22 +99,13 @@ class ValidatorTests(unittest.TestCase):
             "Leap status     : Normal\n"
         )
         sources = "^* fixture-ntp 1 6 377 12 +10us[ +20us] +/- 10ms\n"
-        self.assertEqual(
-            normalize_chrony(tracking, sources),
-            {
-                "synchronized": True,
-                "source": "fixture-ntp",
-                "offset": 0.00123,
-                "raw": {
-                    "tracking": {
-                        "offset": 0.00123,
-                        "leap_status": "Normal",
-                        "synchronized": True,
-                    },
-                    "sources": {"source": "fixture-ntp", "selected": True},
-                },
-            },
-        )
+        normalized = normalize_chrony(tracking, sources)
+        self.assertEqual(normalized["source"], "fixture")
+        self.assertEqual(normalized["selected_source"], "fixture-ntp")
+        self.assertEqual(normalized["source_basis"], "tracking")
+        self.assertTrue(normalized["synchronized"])
+        self.assertEqual(normalized["offset"], 0.00123)
+        self.assertEqual(normalized["raw"]["tracking_text"], tracking)
 
 
 if __name__ == "__main__":

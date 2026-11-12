@@ -36,10 +36,12 @@ class ReviewDecision(StrEnum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"
 
+
 class ManualDBReviewResult(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
     NOT_RUN = "NOT RUN"
+
 
 class DistributionStatus(StrEnum):
     NOT_CONFIGURED = "NOT_CONFIGURED"
@@ -124,6 +126,7 @@ class RunRecord:
     final_snapshot_path: str | None = None
     final_pdf_path: str | None = None
     final_pdf_checksum: str | None = None
+    rejection_reason: str | None = None
 
 
 @dataclass(slots=True)
@@ -140,6 +143,7 @@ class ReviewNote:
     created_at: str | None = None
     updated_at: str | None = None
 
+
 @dataclass(slots=True)
 class ManualDBReview:
     run_id: str
@@ -150,6 +154,7 @@ class ManualDBReview:
     reviewer: str
     reviewed_at: str | None = None
     id: int | None = None
+
 
 @dataclass(slots=True)
 class SiteSummary:

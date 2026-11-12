@@ -242,9 +242,7 @@ class ReviewNoteApiTests(unittest.TestCase):
             }
         )
         self.config["splunk_dashboards"]["open_all"]["include_optional"] = False
-        run_id = self.make_review_ready_run(
-            "WR-20260811-000012"
-        )
+        run_id = self.make_review_ready_run("WR-20260811-000012")
         response = self.client.put(
             f"/api/runs/{run_id}/notes/splunk/system_health",
             json={
@@ -257,9 +255,7 @@ class ReviewNoteApiTests(unittest.TestCase):
             200,
             response.text,
         )
-        page = self.client.get(
-            f"/runs/{run_id}/splunk"
-        )
+        page = self.client.get(f"/runs/{run_id}/splunk")
         self.assertEqual(
             page.status_code,
             200,
@@ -287,18 +283,10 @@ class ReviewNoteApiTests(unittest.TestCase):
             html,
         )
         # Cards must follow the configured display order.
-        recording_position = html.index(
-            'name="splunk-recording"'
-        )
-        infrastructure_position = html.index(
-            'name="splunk-infrastructure"'
-        )
-        system_health_position = html.index(
-            'name="splunk-system_health"'
-        )
-        errors_position = html.index(
-            'name="splunk-errors"'
-        )
+        recording_position = html.index('name="splunk-recording"')
+        infrastructure_position = html.index('name="splunk-infrastructure"')
+        system_health_position = html.index('name="splunk-system_health"')
+        errors_position = html.index('name="splunk-errors"')
         self.assertLess(
             recording_position,
             infrastructure_position,
@@ -334,21 +322,12 @@ class ReviewNoteApiTests(unittest.TestCase):
                 card_end,
                 -1,
             )
-            return html[
-                card_start : card_end + len("</article>")
-            ]
-        system_health_card = dashboard_card_html(
-            "system_health"
-        )
-        recording_card = dashboard_card_html(
-            "recording"
-        )
-        infrastructure_card = dashboard_card_html(
-            "infrastructure"
-        )
-        errors_card = dashboard_card_html(
-            "errors"
-        )
+            return html[card_start : card_end + len("</article>")]
+
+        system_health_card = dashboard_card_html("system_health")
+        recording_card = dashboard_card_html("recording")
+        infrastructure_card = dashboard_card_html("infrastructure")
+        errors_card = dashboard_card_html("errors")
         # Review and note requirements must be visible to the operator.
         self.assertIn(
             "Required review",
@@ -538,7 +517,11 @@ class ReviewNoteApiTests(unittest.TestCase):
             )
             reject = self.client.post(
                 f"/api/runs/{reject_run_id}/finalize",
-                json={"decision": "REJECT", "reviewer": "Alice Operator"},
+                json={
+                    "decision": "REJECT",
+                    "reviewer": "Alice Operator",
+                    "rejection_reason": "Operational findings require follow-up",
+                },
                 headers=reject_headers,
             )
             self.assertEqual(reject.status_code, 200, reject.text)
@@ -575,9 +558,7 @@ class ReviewNoteApiTests(unittest.TestCase):
         return match.group(1)
 
     def test_manual_db_review_api_persists_server_controlled_values(self):
-        run_id = self.make_review_ready_run(
-            "WR-20260909-000400"
-        )
+        run_id = self.make_review_ready_run("WR-20260909-000400")
         response = self.client.put(
             f"/api/runs/{run_id}/manual-db-review",
             json={
@@ -604,10 +585,7 @@ class ReviewNoteApiTests(unittest.TestCase):
         )
         self.assertEqual(
             saved.script_path,
-            (
-                "C:\\Scripts\\DatabaseSync\\"
-                "database_sync_check.ps1"
-            ),
+            ("C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"),
         )
         self.assertEqual(
             saved.comment,
@@ -615,9 +593,7 @@ class ReviewNoteApiTests(unittest.TestCase):
         )
 
     def test_manual_db_review_requires_result_and_comment(self):
-        run_id = self.make_review_ready_run(
-            "WR-20260909-000401"
-        )
+        run_id = self.make_review_ready_run("WR-20260909-000401")
         missing_result = self.client.put(
             f"/api/runs/{run_id}/manual-db-review",
             json={"comment": "test"},
@@ -657,12 +633,8 @@ class ReviewNoteApiTests(unittest.TestCase):
         )
 
     def test_review_page_shows_manual_db_check(self):
-        run_id = self.make_review_ready_run(
-            "WR-20260909-000403"
-        )
-        page = self.client.get(
-            f"/runs/{run_id}/review"
-        )
+        run_id = self.make_review_ready_run("WR-20260909-000403")
+        page = self.client.get(f"/runs/{run_id}/review")
         self.assertEqual(
             page.status_code,
             200,
@@ -677,10 +649,11 @@ class ReviewNoteApiTests(unittest.TestCase):
             "C:\\Scripts\\DatabaseSync\\database_sync_check.ps1",
             html,
         )
-        self.assertIn(
-            "Copy PowerShell Command",
-            html,
-        )
+        self.assertIn("Script location (reference only)", html)
+        self.assertNotIn("Copy PowerShell Command", html)
+        self.assertNotIn("Open Local Script", html)
+        self.assertNotIn("data-manual-db-command", html)
+        self.assertNotIn("powershell.exe -ExecutionPolicy", html)
         self.assertIn(
             'value="PASS"',
             html,
@@ -699,9 +672,7 @@ class ReviewNoteApiTests(unittest.TestCase):
         )
 
     def test_review_page_loads_saved_manual_db_review(self):
-        run_id = self.make_review_ready_run(
-            "WR-20260909-000404"
-        )
+        run_id = self.make_review_ready_run("WR-20260909-000404")
         response = self.client.put(
             f"/api/runs/{run_id}/manual-db-review",
             json={
@@ -714,9 +685,7 @@ class ReviewNoteApiTests(unittest.TestCase):
             200,
             response.text,
         )
-        page = self.client.get(
-            f"/runs/{run_id}/review"
-        )
+        page = self.client.get(f"/runs/{run_id}/review")
         self.assertEqual(page.status_code, 200)
         self.assertIn(
             "Site 2 did not synchronize.",

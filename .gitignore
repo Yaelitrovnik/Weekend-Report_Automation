@@ -27,3 +27,8 @@ deploy/docker/.env
 deploy/docker/env/*.env
 !deploy/docker/env/*.env.example
 deploy/docker/images/
+
+# Local release validation artifacts
+tmp/
+output/
+*.log

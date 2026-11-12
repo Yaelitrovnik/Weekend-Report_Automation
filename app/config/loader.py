@@ -150,13 +150,33 @@ def _validate_numbered_sites(env: Mapping[str, str], count: int) -> None:
     """Reject misspelled or out-of-inventory numbered settings instead of ignoring them."""
     suffixes = {
         "PORTAINER_": {
-            "URL", "ENDPOINT_ID", "TOKEN", "TLS_VERIFY", "CA_FILE",
-            "ENVIRONMENT_TYPE", "API_CONTRACT", "AUTH_TYPE",
+            "URL",
+            "ENDPOINT_ID",
+            "TOKEN",
+            "TLS_VERIFY",
+            "CA_FILE",
+            "ENVIRONMENT_TYPE",
+            "API_CONTRACT",
+            "AUTH_TYPE",
         },
-        "DOCTOR_": {"API_URL"},
+        "DOCTOR_": {
+            "API_URL",
+            "AUTH_TYPE",
+            "TOKEN",
+            "USERNAME",
+            "PASSWORD",
+            "TLS_VERIFY",
+            "CA_FILE",
+        },
         "RABBITMQ_": {
-            "URL", "USER", "PASSWORD", "TLS_VERIFY", "CA_FILE", "REQUIRED",
-            "TIMEOUT_SECONDS", "RETRY_ATTEMPTS",
+            "URL",
+            "USER",
+            "PASSWORD",
+            "TLS_VERIFY",
+            "CA_FILE",
+            "REQUIRED",
+            "TIMEOUT_SECONDS",
+            "RETRY_ATTEMPTS",
         },
     }
     for name in env:
@@ -271,10 +291,23 @@ def _load_doctor(
         "mode": _env_string(env, "DOCTOR_MODE", "api"),
         "api": {
             "sites": {
-                site_id: _env_string(env, f"DOCTOR_SITE{idx}_API_URL")
+                site_id: _env_string(env, f"DOCTOR_SITE{idx}_API_URL") for idx, site_id in site_refs
+            },
+            "connections": {
+                site_id: {
+                    "auth_type": _env_string(env, f"DOCTOR_SITE{idx}_AUTH_TYPE", "none"),
+                    "token": env.get(f"DOCTOR_SITE{idx}_TOKEN", ""),
+                    "username": _env_string(env, f"DOCTOR_SITE{idx}_USERNAME"),
+                    "password": env.get(f"DOCTOR_SITE{idx}_PASSWORD", ""),
+                    "tls_verify": _env_tls_verify(
+                        env, f"DOCTOR_SITE{idx}_TLS_VERIFY", default=True
+                    ),
+                    "ca_file": _env_string(env, f"DOCTOR_SITE{idx}_CA_FILE"),
+                }
                 for idx, site_id in site_refs
             },
         },
+        "expected_services": copy.deepcopy(policy.get("expected_services", [])),
         "validation": copy.deepcopy(policy.get("validation", {})),
         "manual_review": copy.deepcopy(policy.get("manual_review", {})),
     }
@@ -421,6 +454,7 @@ def _load_splunk(env: Mapping[str, str], rules: dict[str, Any]) -> dict[str, Any
         "open_all": copy.deepcopy(policy.get("open_all", {"include_optional": True})),
     }
 
+
 def _load_manual_db_check(env: Mapping[str, str]) -> dict[str, Any]:
     return {
         "enabled": _env_bool(
@@ -443,6 +477,7 @@ def _load_manual_db_check(env: Mapping[str, str]) -> dict[str, Any]:
             default=False,
         ),
     }
+
 
 def _mapping_at(config: dict[str, Any], *parts: str) -> dict[str, Any]:
     current: Any = config

@@ -195,14 +195,13 @@ instead of modifying Python code.
 
 Infrastructure policy remains in `rules.yml`, including filesystem and Chrony thresholds.
 
-The filesystem policy is `command: df -h | grep mapper`, `match: mapper`,
-`warning_percent: 70`, `critical_percent: 80`, and `required: true`. It discovers
-mapper filesystems dynamically on every server in every configured site and evaluates
-each independently. There is no mountpoint selector or configured mapper inventory;
-the `/` mount is not required. Do not add mapper devices or a command override to ENV.
-Usage < 70% is PASS, >= 70% and < 80% is WARNING, and >= 80% is FAIL.
-No matches (empty output or grep exit 1 without diagnostics) is FAIL. Technical
-collection failures, command diagnostics, and malformed output are ERROR.
+The deployment filesystem policy is `command: df -h | grep mapper`,
+`match: mapper`, `warning_percent: 70`, `critical_percent: 80`, and
+`required: true`. It evaluates **every matching `/dev/mapper` filesystem** on
+each configured server, independently of its mount point. Do not add device
+paths or override the command from ENV. Usage below 70% is PASS, 70–79% is
+WARNING, and 80% or above is FAIL. No matching filesystems is FAIL;
+SSH/command errors and malformed output are ERROR.
 
 ## 9. Portainer
 
@@ -686,6 +685,51 @@ also bounds channel opening, exec acknowledgement, and draining both output stre
 Fixed error categories and output redaction keep credentials out of evidence,
 logs, UI, and PDF results. Configuration hashing redacts password values.
 
-Mapper collection remains exactly `df -h | grep mapper`: every returned mapper is
-validated independently (<70% PASS, 70–79% WARNING, >=80% FAIL). No mapper match is
-FAIL; SSH or technical command failures are ERROR. Chrony validation is unchanged.
+The deployment collects mapper-backed filesystems using `df -h | grep mapper`
+(`match: mapper`). Each matching filesystem is evaluated independently
+(<70% PASS, 70–79% WARNING, >=80% FAIL). No mapper matches is FAIL;
+SSH or technical command failures are ERROR. Chrony validation is unchanged.
+
+
+## v1.5.3 reliability settings
+
+See [release engineering notes](RELEASE_v1.5.3.md) for deployment and known blockers.
+The Docker image and runtime version remain Python 3.14; no scheduled runs are added.
+
+- `rules.portainer.health_required` defaults to `false`. An unavailable health count is
+  shown as Unavailable; `true` requires reliable health for all current running tasks.
+- Global services additionally read `/api/endpoints/{id}/docker/nodes`. Allow that GET in
+  the existing Portainer permissions. Node status, availability, constraints, and declared
+  platforms determine eligibility. Resource reservations or unsupported constraints are
+  explicit unavailable metrics, because the collected data cannot reproduce scheduling.
+- `rules.doctor.expected_services` defaults to `[]` (discovery-only). Supply a list of
+  exact expected names, or a mapping from runtime site ID to lists. Missing names are
+  technical `DOCTOR_INCOMPLETE_RESPONSE` errors. The application does not hardcode 17.
+- `DOCTOR_SITE<N>_AUTH_TYPE`: `none` (backward-compatible default), `basic`,
+  `bearer_token`, or `x_api_key`. Supply the corresponding `USERNAME`/`PASSWORD` or
+  `TOKEN` values. `TLS_VERIFY=true` by default; `custom_ca` requires `CA_FILE` mounted
+  read-only. `false` is rejected. URLs must be backend HTTP(S) endpoints without
+  fragments or embedded credentials. The existing response adapter expects a list
+  with name/status/optional entries; this is not confirmation of the live API schema.
+- Chrony `local_reference_status` defaults to `WARNING` and accepts PASS/WARNING/FAIL/ERROR.
+  `max_root_distance_seconds` defaults to `null`; a positive number enables a required
+  uncertainty measurement from tracking root delay and dispersion. `source_aliases`
+  and `timezone_aliases` default to empty lists. Expectations still come from the
+  existing per-server/global CHRONY_SOURCE and CHRONY_TIMEZONE environment settings.
+  Numeric `chronyc sources -n` identities can be listed as approved source aliases.
+  A selected source alone does not prove the tracked reference. Local fallback is
+  labeled explicitly; timezone Etc/UTC is valid when configured or aliased.
+- Deployment filesystem policy uses all mapper-backed filesystems
+  (`match: mapper`, `command: df -h | grep mapper`) with 70/80 percent
+  thresholds. Matching filesystems are required.
+- `rules.review.reject_allowed` remains the rejection switch. A completed required DB
+  review and its comment remain required; PASS, FAIL, and NOT RUN all permit rejection.
+  REJECT additionally requires an explicit `rejection_reason` (maximum 10000 characters),
+  or a saved non-empty general note for older API clients. APPROVE keeps all existing
+  review/acknowledgment and technical-status gates. Reasons never alter technical results.
+- A failed PDF render retains the frozen snapshot. Retry with the original reviewer,
+  decision, and reason. Notes and manual DB results are locked after the snapshot freezes.
+  Finalization stays blocked in RECOVERY_REQUIRED.
+
+Single-site parity is displayed as NOT_APPLICABLE in the overview and final report.
+No parity PASS is manufactured, and no comparison result is added to alter aggregation.

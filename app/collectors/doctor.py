@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import socket
+import ssl
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from app.collectors.base import Collector
+from app.config.schema import is_unresolved_placeholder
+from app.evidence.redaction import configured_secrets, sanitize, sanitize_endpoint
 from app.orchestrator.run_context import RunContext
 from app.time_utils import iso_now
 
@@ -24,6 +29,7 @@ class DoctorError(RuntimeError):
         site: str | None = None,
         status_code: int | None = None,
         retryable: bool = False,
+        endpoint: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -31,12 +37,15 @@ class DoctorError(RuntimeError):
         self.site = site
         self.status_code = status_code
         self.retryable = retryable
+        self.endpoint = endpoint
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "code": self.code,
             "message": self.message,
             "retryable": self.retryable,
+            "endpoint": sanitize_endpoint(self.endpoint or ""),
+            "collection_timestamp": iso_now(),
         }
 
         if self.site:
@@ -96,9 +105,13 @@ class DoctorCollector(Collector):
         errors: list[dict[str, Any]] = []
 
         for site_id in site_ids:
+            url = str(site_urls.get(site_id) or "")
+            connection = (api.get("connections") or {}).get(site_id, {})
             try:
                 url = _required_url(site_urls.get(site_id), site_id)
-                payload = self._get_json(site_id, url)
+                payload = sanitize(
+                    self._get_json(site_id, url, connection), configured_secrets(connection)
+                )
 
                 sites[site_id] = _normalize_site(
                     site_id,
@@ -106,6 +119,7 @@ class DoctorCollector(Collector):
                 )
 
             except DoctorError as exc:
+                exc.endpoint = url
                 errors.append(exc.to_payload())
 
         return {
@@ -124,7 +138,10 @@ class DoctorCollector(Collector):
         self,
         site_id: str,
         url: str,
+        connection: dict[str, Any] | None = None,
     ) -> Any:
+        connection = connection or {}
+        headers, auth, verify = doctor_connection_options(connection, site_id)
         timeout = httpx.Timeout(
             connect=5.0,
             read=20.0,
@@ -136,10 +153,12 @@ class DoctorCollector(Collector):
             with httpx.Client(
                 timeout=timeout,
                 transport=self.transport,
+                verify=verify,
+                auth=auth,
             ) as client:
                 response = client.get(
                     url,
-                    headers={"Accept": "application/json"},
+                    headers=headers,
                 )
 
         except httpx.TimeoutException as exc:
@@ -151,28 +170,24 @@ class DoctorCollector(Collector):
             ) from exc
 
         except httpx.HTTPError as exc:
-            raise DoctorError(
-                "DOCTOR_CONNECTION_ERROR",
-                "DOCTOR API connection failed",
-                site=site_id,
-                retryable=True,
-            ) from exc
+            code, description, retryable = classify_transport_error(exc)
+            raise DoctorError(code, description, site=site_id, retryable=retryable) from exc
 
         if response.status_code in {401, 403}:
             raise DoctorError(
-                "DOCTOR_AUTHENTICATION_ERROR",
+                "DOCTOR_AUTH_ERROR",
                 f"DOCTOR API returned HTTP {response.status_code}",
                 site=site_id,
                 status_code=response.status_code,
             )
 
-        if response.status_code >= 400:
+        if response.status_code >= 300:
             raise DoctorError(
                 "DOCTOR_HTTP_ERROR",
                 f"DOCTOR API returned HTTP {response.status_code}",
                 site=site_id,
                 status_code=response.status_code,
-                retryable=response.status_code >= 500,
+                retryable=response.status_code >= 500 or response.status_code in {408, 429},
             )
 
         try:
@@ -302,13 +317,9 @@ def _failure_reason(
             if status == "Healthy":
                 continue
 
-            name = str(
-                entry.get("name") or "health check"
-            ).strip()
+            name = str(entry.get("name") or "health check").strip()
 
-            description = str(
-                entry.get("description") or ""
-            ).strip()
+            description = str(entry.get("description") or "").strip()
 
             if description:
                 reasons.append(f"{name}: {description}")
@@ -359,7 +370,90 @@ def _required_url(
             site=site_id,
         )
 
+    try:
+        parsed = urlsplit(value.strip())
+        if (
+            parsed.scheme not in {"https", "http"}
+            or not parsed.hostname
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+            or is_unresolved_placeholder(value)
+        ):
+            raise ValueError
+        _ = parsed.port
+    except ValueError as exc:
+        raise DoctorError(
+            "DOCTOR_CONFIGURATION_ERROR",
+            "Use a backend HTTP(S) API URL without a fragment or embedded credentials",
+            site=site_id,
+        ) from exc
     return value.strip()
+
+
+def doctor_connection_options(connection: dict[str, Any], site: str):
+    tls = connection.get("tls_verify", True)
+    verify: bool | ssl.SSLContext = True
+    if tls == "custom_ca":
+        ca = connection.get("ca_file")
+        if not isinstance(ca, str) or not ca.strip() or is_unresolved_placeholder(ca):
+            raise DoctorError(
+                "DOCTOR_CONFIGURATION_ERROR", "DOCTOR CA bundle is required", site=site
+            )
+        try:
+            verify = ssl.create_default_context(cafile=ca)
+        except (OSError, ssl.SSLError) as exc:
+            raise DoctorError(
+                "DOCTOR_TLS_ERROR", "DOCTOR CA bundle could not be loaded", site=site
+            ) from exc
+    elif tls is not True:
+        raise DoctorError(
+            "DOCTOR_CONFIGURATION_ERROR", "DOCTOR TLS verification must remain enabled", site=site
+        )
+    kind = connection.get("auth_type", "none")
+    headers = {"Accept": "application/json"}
+    auth = None
+    if kind in {"bearer_token", "x_api_key"}:
+        token = connection.get("token")
+        if not isinstance(token, str) or not token or is_unresolved_placeholder(token):
+            raise DoctorError(
+                "DOCTOR_CONFIGURATION_ERROR", "DOCTOR authentication token is required", site=site
+            )
+        headers["Authorization" if kind == "bearer_token" else "X-API-Key"] = (
+            f"Bearer {token}" if kind == "bearer_token" else token
+        )
+    elif kind == "basic":
+        username, password = connection.get("username"), connection.get("password")
+        if not username or not password or is_unresolved_placeholder(password):
+            raise DoctorError(
+                "DOCTOR_CONFIGURATION_ERROR", "DOCTOR Basic credentials are required", site=site
+            )
+        auth = httpx.BasicAuth(username, password)
+    elif kind != "none":
+        raise DoctorError(
+            "DOCTOR_CONFIGURATION_ERROR", "Unsupported DOCTOR authentication method", site=site
+        )
+    return headers, auth, verify
+
+
+def classify_transport_error(exc: Exception) -> tuple[str, str, bool]:
+    chain = []
+    current: BaseException | None = exc
+    while current is not None and current not in chain:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    text = " ".join(str(item).lower() for item in chain)
+    if any(isinstance(item, ssl.SSLError) for item in chain) or any(
+        marker in text for marker in ("certificate", "ssl", "tls")
+    ):
+        return "DOCTOR_TLS_ERROR", "DOCTOR TLS/certificate verification failed", False
+    if any(isinstance(item, socket.gaierror) for item in chain) or any(
+        marker in text for marker in ("getaddrinfo", "name or service not known", "name resolution")
+    ):
+        return "DOCTOR_DNS_ERROR", "DOCTOR hostname resolution failed", True
+    if any(isinstance(item, ConnectionRefusedError) for item in chain) or "refused" in text:
+        return "DOCTOR_CONNECTION_REFUSED", "DOCTOR connection was refused", True
+    return "DOCTOR_CONNECTION_ERROR", "DOCTOR transport connection failed", True
 
 
 def _blocked_payload(

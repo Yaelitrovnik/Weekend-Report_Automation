@@ -7,6 +7,8 @@ from typing import Any
 from app.domain import EvidenceRecord
 from app.evidence.checksum import sha256_file
 from app.evidence.paths import ensure_under, safe_relative_path
+from app.evidence.redaction import sanitize
+from app.observability import event
 from app.time_utils import iso_now
 
 
@@ -29,7 +31,7 @@ class EvidenceManager:
         *,
         evidence_type: str = "raw",
     ) -> EvidenceRecord:
-        raw = json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+        raw = json.dumps(sanitize(data), indent=2, sort_keys=True).encode("utf-8")
         return self._write(
             run_id, module, site, filename, raw, "application/json", evidence_type=evidence_type
         )
@@ -50,7 +52,7 @@ class EvidenceManager:
             module,
             site,
             filename,
-            data.encode("utf-8"),
+            sanitize(data).encode("utf-8"),
             mime_type,
             evidence_type=evidence_type,
         )
@@ -77,6 +79,13 @@ class EvidenceManager:
         tmp.write_bytes(data)
         tmp.replace(path)
         checksum = sha256_file(path)
+        event(
+            "evidence_written",
+            run_id=run_id,
+            module=module,
+            site=site,
+            path=path.relative_to(self.root).as_posix(),
+        )
         return EvidenceRecord(
             run_id,
             module,
@@ -89,7 +98,7 @@ class EvidenceManager:
         )
 
     def write_final_json(self, run_id: str, filename: str, data: Any) -> EvidenceRecord:
-        raw = json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+        raw = json.dumps(sanitize(data), indent=2, sort_keys=True).encode("utf-8")
         path = ensure_under(
             self.root, self.root / "runs" / safe_relative_path(run_id, "final", filename)
         )

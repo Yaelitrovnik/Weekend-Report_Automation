@@ -92,7 +92,7 @@ class RabbitMQTests(unittest.TestCase):
         self.assertEqual(file_descriptors.status, CheckStatus.ERROR)
         self.assertEqual(
             file_descriptors.metadata["error_code"],
-            "RABBITMQ_NODE_HEALTH_MAPPING_UNRESOLVED",
+            "RABBITMQ_NODE_METRIC_UNAVAILABLE",
         )
 
     def test_collection_errors_remain_blocking_errors(self):
@@ -245,6 +245,7 @@ class RabbitMQTests(unittest.TestCase):
                 "disk_space": "green",
             },
         )
+
     def test_live_node_resource_metrics_map_warning_thresholds(self):
         states = _known_resource_states(
             {
@@ -261,6 +262,7 @@ class RabbitMQTests(unittest.TestCase):
         self.assertEqual(states["socket_descriptors"], "yellow")
         self.assertEqual(states["erlang_processes"], "yellow")
         self.assertEqual(states["disk_space"], "green")
+
     def test_live_node_resource_metrics_map_critical_thresholds(self):
         states = _known_resource_states(
             {
@@ -277,6 +279,7 @@ class RabbitMQTests(unittest.TestCase):
         self.assertEqual(states["socket_descriptors"], "red")
         self.assertEqual(states["erlang_processes"], "red")
         self.assertEqual(states["disk_space"], "red")
+
     def test_disk_space_uses_free_limit_when_alarm_field_is_missing(self):
         healthy = _known_resource_states(
             {
@@ -292,6 +295,7 @@ class RabbitMQTests(unittest.TestCase):
         )
         self.assertEqual(healthy["disk_space"], "green")
         self.assertEqual(unhealthy["disk_space"], "red")
+
     def test_missing_live_node_metrics_are_not_fabricated(self):
         states = _known_resource_states(
             {
@@ -302,6 +306,7 @@ class RabbitMQTests(unittest.TestCase):
         self.assertNotIn("socket_descriptors", states)
         self.assertNotIn("erlang_processes", states)
         self.assertEqual(states["disk_space"], "green")
+
     def test_custom_ca_creates_ssl_context(self):
         connection = {
             "url": "https://rabbitmq.example.invalid",
@@ -319,9 +324,8 @@ class RabbitMQTests(unittest.TestCase):
         ) as create_context:
             settings = _client_settings("site1", connection)
         self.assertIs(settings.tls_verify, ssl_context)
-        create_context.assert_called_once_with(
-            cafile="/app/secrets/rabbitmq-ca.pem"
-        )
+        create_context.assert_called_once_with(cafile="/app/secrets/rabbitmq-ca.pem")
+
     def test_tls_verify_false_is_rejected(self):
         connection = {
             "url": "https://rabbitmq.example.invalid",

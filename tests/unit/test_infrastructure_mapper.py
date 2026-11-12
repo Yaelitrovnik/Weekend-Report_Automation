@@ -40,11 +40,10 @@ class MapperFilesystemTests(unittest.TestCase):
     def validate_output(self, output):
         actual = self.config["servers"]["fixture_actual"]
         actual["sites"]["site1"]["servers"]["srv1"].update(output)
-        results = InfrastructureValidator().validate(
-            actual, self.config, self.context(self.config)
-        )
+        results = InfrastructureValidator().validate(actual, self.config, self.context(self.config))
         return [
-            r for r in results
+            r
+            for r in results
             if r.site == "site1" and r.check_id.startswith("infrastructure.filesystem.")
         ]
 
@@ -55,6 +54,7 @@ class MapperFilesystemTests(unittest.TestCase):
         other_outputs = {
             "timedatectl show -p Timezone --value": "UTC",
             "chronyc tracking": (
+                "Reference ID : CB007101 (fixture-ntp)\n"
                 "System time : 0.001 seconds slow of NTP time\nLeap status : Normal"
             ),
             "chronyc sources -n": "^* fixture-ntp 1 6 377 12 +10us",
@@ -74,6 +74,35 @@ class MapperFilesystemTests(unittest.TestCase):
         results = InfrastructureValidator().validate(actual, config, context)
         return actual, results, ssh
 
+    def test_root_only_command_exit_one_is_technical_error(self):
+        config = load_fixture_config()
+        del config["servers"]["fixture_actual"]
+        for site in config["servers"]["sites"].values():
+            for server in site["servers"]:
+                server["filesystems"] = [{
+                    "match": "root",
+                    "command": "df -P /",
+                    "warning_percent": 70,
+                    "critical_percent": 80,
+                    "required": True,
+                }]
+        ssh = Mock(spec=SSHExecutor)
+
+        def execute(**kwargs):
+            if kwargs["command"] == "df -P /":
+                return SSHResult(kwargs["host"], "df -P /", 1, "", "", 5)
+            raise AssertionError("Chrony should still run, but this test checks only root output")
+
+        ssh.run.side_effect = execute
+        actual = InfrastructureCollector(ssh).collect(self.context(config))
+        for site in actual["sites"].values():
+            for server in site["servers"].values():
+                self.assertTrue(server["reachable"])
+                self.assertIn("root filesystem command exited 1", server["df_error"])
+        results = InfrastructureValidator().validate(actual, config, self.context(config))
+        self.assertTrue(any(r.status == CheckStatus.ERROR and ".filesystem." in r.check_id
+                            for r in results))
+
     def test_mapper_threshold_boundaries(self):
         for usage, expected in (
             (40, CheckStatus.PASS),
@@ -86,11 +115,14 @@ class MapperFilesystemTests(unittest.TestCase):
             with self.subTest(usage=usage):
                 results = self.validate_output({"df": mapper_line(usage)})
                 self.assertEqual([r.status for r in results], [expected])
-                self.assertEqual(results[0].actual, {
-                    "filesystem": "/dev/mapper/vg-data",
-                    "mountpoint": "/data",
-                    "utilization_percent": usage,
-                })
+                self.assertEqual(
+                    results[0].actual,
+                    {
+                        "filesystem": "/dev/mapper/vg-data",
+                        "mountpoint": "/data",
+                        "utilization_percent": usage,
+                    },
+                )
                 self.assertEqual(results[0].target, "srv1")
                 self.assertIn("/dev/mapper/vg-data mounted on /data", results[0].message)
                 self.assertIn(f"{usage}%", results[0].message)
@@ -108,9 +140,9 @@ class MapperFilesystemTests(unittest.TestCase):
                 self.assertEqual(len({r.actual["filesystem"] for r in results}), 3)
 
     def test_one_failed_mapper_is_not_masked_by_other_filesystems(self):
-        results = self.validate_output({
-            "df": mapper_line(40) + mapper_line(84, "/var/log", "/dev/mapper/vg-log")
-        })
+        results = self.validate_output(
+            {"df": mapper_line(40) + mapper_line(84, "/var/log", "/dev/mapper/vg-log")}
+        )
         self.assertEqual([r.status for r in results], [CheckStatus.PASS, CheckStatus.FAIL])
         self.assertEqual(aggregate_status(results, self.config), CheckStatus.FAIL)
         self.assertEqual(module_summaries(results, self.config)[0].status, CheckStatus.FAIL)
@@ -140,9 +172,7 @@ class MapperFilesystemTests(unittest.TestCase):
     def test_missing_output_is_error(self):
         for raw in (None, [], 0):
             with self.subTest(raw=raw):
-                self.assertEqual(
-                    self.validate_output({"df": raw})[0].status, CheckStatus.ERROR
-                )
+                self.assertEqual(self.validate_output({"df": raw})[0].status, CheckStatus.ERROR)
 
     def test_clean_empty_output_and_grep_exit_one_are_fail_not_unreachable(self):
         for exit_code in (0, 1):
@@ -155,13 +185,16 @@ class MapperFilesystemTests(unittest.TestCase):
                     self.assertEqual(server["commands"]["df"]["exit_code"], exit_code)
                 filesystems = [r for r in results if ".filesystem." in r.check_id]
                 self.assertEqual([r.status for r in filesystems], [CheckStatus.FAIL] * 2)
-                self.assertTrue(all(
-                    r.message == "No mapper filesystems were found" for r in filesystems
-                ))
-                self.assertTrue(all(
-                    r.status == CheckStatus.PASS
-                    for r in results if ".chrony." in r.check_id or ".ssh." in r.check_id
-                ))
+                self.assertTrue(
+                    all(r.message == "No mapper filesystems were found" for r in filesystems)
+                )
+                self.assertTrue(
+                    all(
+                        r.status == CheckStatus.PASS
+                        for r in results
+                        if ".chrony." in r.check_id or ".ssh." in r.check_id
+                    )
+                )
                 self.assertEqual(ssh.run.call_count, 8)
 
     def test_command_errors_and_masked_upstream_diagnostics_remain_error(self):
@@ -179,9 +212,9 @@ class MapperFilesystemTests(unittest.TestCase):
                 filesystems = [r for r in results if ".filesystem." in r.check_id]
                 self.assertEqual([r.status for r in filesystems], [CheckStatus.ERROR] * 2)
                 self.assertTrue(all(r.actual["df"] == stdout for r in filesystems))
-                self.assertTrue(all(
-                    r.status == CheckStatus.PASS for r in results if ".chrony." in r.check_id
-                ))
+                self.assertTrue(
+                    all(r.status == CheckStatus.PASS for r in results if ".chrony." in r.check_id)
+                )
 
     def test_ssh_failures_remain_error(self):
         for exit_code, stderr, exception in (
@@ -240,18 +273,20 @@ class MapperFilesystemTests(unittest.TestCase):
                 for index in range(1, count + 1):
                     site = f"region-{index}"
                     outputs = config["servers"]["fixture_actual"]["sites"][site]["servers"]
-                    outputs[f"srv{index}"]["df"] = (
-                        mapper_line(40) + mapper_line(
-                            (40, 70, 80)[index - 1], "/var", "/dev/mapper/vg-var"
-                        )
+                    outputs[f"srv{index}"]["df"] = mapper_line(40) + mapper_line(
+                        (40, 70, 80)[index - 1], "/var", "/dev/mapper/vg-var"
                     )
                 expected = config["servers"]["sites"]["region-1"]["servers"]
                 expected.append({**expected[0], "id": "extra"})
                 config["servers"]["fixture_actual"]["sites"]["region-1"]["servers"]["extra"] = {
                     "reachable": True,
                     "df": mapper_line(69),
-                    "chrony": {"synchronized": True, "timezone": "UTC",
-                               "source": "fixture-ntp", "offset": 0.1},
+                    "chrony": {
+                        "synchronized": True,
+                        "timezone": "UTC",
+                        "source": "fixture-ntp",
+                        "offset": 0.1,
+                    },
                 }
                 results = InfrastructureValidator().validate(
                     config["servers"]["fixture_actual"], config, self.context(config)
@@ -263,9 +298,7 @@ class MapperFilesystemTests(unittest.TestCase):
                     [s.status for s in summaries],
                     [CheckStatus.PASS, CheckStatus.WARNING, CheckStatus.FAIL][:count],
                 )
-                self.assertEqual(
-                    len([r for r in filesystems if r.target == "extra"]), 1
-                )
+                self.assertEqual(len([r for r in filesystems if r.target == "extra"]), 1)
 
     def test_policy_rejects_mount_selection_wrong_command_match_or_optional_discovery(self):
         for field, value in (

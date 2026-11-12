@@ -1,29 +1,21 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.collectors.base import Collector
+from app.collectors.swarm import global_eligibility
 from app.config.schema import is_unresolved_placeholder
+from app.evidence.redaction import sanitize as sanitize_for_evidence
 from app.orchestrator.run_context import RunContext
 from app.time_utils import iso_now
 
 SUPPORTED_API_CONTRACTS = {"docker_proxy_v1"}
 TOKEN_AUTH_TYPES = {"bearer_token", "jwt", "x_api_key"}
 TRANSIENT_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-SENSITIVE_KEY_PARTS = {
-    "authorization",
-    "cookie",
-    "password",
-    "secret",
-    "token",
-    "x-api-key",
-    "apikey",
-}
 
 
 class PortainerError(RuntimeError):
@@ -272,6 +264,9 @@ class DockerProxyV1Operations:
     def list_services(self, client: PortainerClient) -> Any:
         return client.get_json(f"/api/endpoints/{self.endpoint_id}/docker/services")
 
+    def list_nodes(self, client: PortainerClient) -> Any:
+        return client.get_json(f"/api/endpoints/{self.endpoint_id}/docker/nodes")
+
     def list_tasks(self, client: PortainerClient) -> Any:
         return client.get_json(f"/api/endpoints/{self.endpoint_id}/docker/tasks")
 
@@ -306,12 +301,25 @@ class PortainerCollector(Collector):
                 api_metadata = client.probe_status()
                 raw_services = operations.list_services(client)
                 raw_tasks = operations.list_tasks(client)
+                raw_nodes = None
+                node_error = None
+                if isinstance(raw_services, list) and any(
+                    isinstance(item, dict)
+                    and isinstance(item.get("Spec"), dict)
+                    and "Global" in (item["Spec"].get("Mode") or {})
+                    for item in raw_services
+                ):
+                    try:
+                        raw_nodes = operations.list_nodes(client)
+                    except PortainerError as exc:
+                        node_error = exc.to_payload()
                 sites[site_id] = normalize_swarm_site(
                     site_id,
                     site_config,
                     raw_services,
                     raw_tasks,
-                    api_metadata=api_metadata,
+                    api_metadata={**api_metadata, "node_collection_error": node_error},
+                    raw_nodes=raw_nodes,
                 )
             except PortainerError as exc:
                 errors.append(exc.to_payload())
@@ -417,6 +425,7 @@ def normalize_swarm_site(
     raw_tasks: Any,
     *,
     api_metadata: dict[str, Any],
+    raw_nodes: Any = None,
 ) -> dict[str, Any]:
     if not isinstance(raw_services, list) or not isinstance(raw_tasks, list):
         raise PortainerError(
@@ -427,10 +436,24 @@ def normalize_swarm_site(
     tasks_by_service: dict[str, list[dict[str, Any]]] = {}
     for task in raw_tasks:
         if not isinstance(task, dict):
-            continue
+            raise PortainerError(
+                "PORTAINER_INVALID_RESPONSE", "Task entry is not an object", site=site_id
+            )
         service_id = str(task.get("ServiceID") or task.get("service_id") or "")
-        if service_id:
-            tasks_by_service.setdefault(service_id, []).append(task)
+        if not service_id:
+            raise PortainerError(
+                "PORTAINER_INVALID_RESPONSE", "Task service identifier is missing", site=site_id
+            )
+        status = task.get("Status")
+        if (
+            not isinstance(status, dict)
+            or not isinstance(status.get("State"), str)
+            or not isinstance(task.get("DesiredState"), str)
+        ):
+            raise PortainerError(
+                "PORTAINER_INVALID_RESPONSE", "Task state is missing or malformed", site=site_id
+            )
+        tasks_by_service.setdefault(service_id, []).append(task)
     services = []
     for service in raw_services:
         if not isinstance(service, dict):
@@ -439,7 +462,14 @@ def normalize_swarm_site(
                 "Portainer service entry was not an object",
                 site=site_id,
             )
-        normalized = _normalize_service(site_id, site_config, service, tasks_by_service)
+        try:
+            normalized = _normalize_service(
+                site_id, site_config, service, tasks_by_service, raw_nodes
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise PortainerError(
+                "PORTAINER_INVALID_RESPONSE", "Malformed service fields", site=site_id
+            ) from exc
         services.append(normalized)
     return {
         "site": site_id,
@@ -449,6 +479,7 @@ def normalize_swarm_site(
         "raw_api": {
             "services": sanitize_for_evidence(raw_services),
             "tasks": sanitize_for_evidence(raw_tasks),
+            "nodes": sanitize_for_evidence(raw_nodes),
         },
         "services": services,
     }
@@ -459,14 +490,31 @@ def _normalize_service(
     site_config: dict[str, Any],
     service: dict[str, Any],
     tasks_by_service: dict[str, list[dict[str, Any]]],
+    raw_nodes: Any = None,
 ) -> dict[str, Any]:
     spec = service.get("Spec") or {}
+    if not isinstance(spec, dict) or not isinstance(spec.get("Mode", {}), dict):
+        raise PortainerError(
+            "PORTAINER_INVALID_RESPONSE", "Malformed service specification", site=site_id
+        )
+    for field in ("TaskTemplate", "Mode", "Labels"):
+        if field in spec and not isinstance(spec[field], dict):
+            raise PortainerError(
+                "PORTAINER_INVALID_RESPONSE", "Malformed service object", site=site_id
+            )
+    mode = spec.get("Mode", {})
+    if any(not isinstance(value, dict) for value in mode.values()):
+        raise PortainerError("PORTAINER_INVALID_RESPONSE", "Malformed service mode", site=site_id)
     task_template = spec.get("TaskTemplate") or {}
     container_spec = task_template.get("ContainerSpec") or {}
     mode_obj = spec.get("Mode") or {}
     replicated = mode_obj.get("Replicated") or {}
     service_id = str(service.get("ID") or service.get("Id") or service.get("id") or "")
     name = str(spec.get("Name") or service.get("Name") or service.get("name") or service_id)
+    if not service_id or not name or not isinstance(spec.get("Mode"), dict):
+        raise PortainerError(
+            "PORTAINER_INVALID_RESPONSE", "Service identity or mode is missing", site=site_id
+        )
     labels = spec.get("Labels") or service.get("Labels") or {}
     stack = labels.get("com.docker.stack.namespace")
     desired_replicas = replicated.get("Replicas")
@@ -476,12 +524,10 @@ def _normalize_service(
 
     running_replicas = sum(1 for task in task_states if task.get("current_state") == "running")
 
-    health_values = [
-        task.get("health")
-        for task in task_states
-        if task.get("health") not in (None, "", "unknown")
-    ]
-    health_available = bool(health_values)
+    running_tasks = [task for task in task_states if task.get("current_state") == "running"]
+    health_available = bool(running_tasks) and all(
+        task.get("health") in {"healthy", "unhealthy", "starting"} for task in running_tasks
+    )
     healthy_replicas = (
         sum(
             1
@@ -497,7 +543,14 @@ def _normalize_service(
     restarting_tasks = sum(1 for task in task_states if task.get("current_state") == "restarting")
     starting_tasks = sum(1 for task in task_states if task.get("current_state") == "starting")
 
-    service_mode = "replicated" if "Replicated" in mode_obj else "global"
+    service_mode = (
+        "replicated"
+        if "Replicated" in mode_obj
+        else ("global" if "Global" in mode_obj else "unknown")
+    )
+    eligibility: dict[str, Any] = {}
+    if service_mode == "global":
+        desired_replicas, eligibility = global_eligibility(service, raw_nodes, task_states)
     service_state = _derive_service_state(
         service_mode=service_mode,
         desired_replicas=desired_replicas,
@@ -534,6 +587,12 @@ def _normalize_service(
         },
         "image": container_spec.get("Image") or service.get("Image") or service.get("image"),
         "service_mode": service_mode,
+        "eligibility": eligibility,
+        "historical_task_failures": [
+            task
+            for task in all_task_states
+            if not _is_current_task(task) and task.get("current_state") in {"failed", "rejected"}
+        ],
         "service_state": service_state,
         "update_state": update_status.get("State"),
         "task_states": task_states,
@@ -584,7 +643,7 @@ def _derive_service_state(
     if failed_tasks or rejected_tasks or restarting_tasks:
         return "degraded"
 
-    if service_mode == "replicated" and isinstance(desired_replicas, int):
+    if service_mode in {"replicated", "global"} and isinstance(desired_replicas, int):
         if desired_replicas == 0:
             return "stopped"
         if running_replicas >= desired_replicas:
@@ -618,6 +677,7 @@ def _normalize_task(task: dict[str, Any]) -> dict[str, Any]:
         "message": status.get("Message") or task.get("message"),
         "node_id": task.get("NodeID") or task.get("node_id"),
         "slot": task.get("Slot") or task.get("slot"),
+        "timestamp": status.get("Timestamp"),
     }
 
 
@@ -658,32 +718,6 @@ def _normalize_fixture_site(site_id: str, site_config: dict[str, Any]) -> dict[s
         "raw_api": sanitize_for_evidence(site_config.get("raw_api", {})),
         "services": services,
     }
-
-
-def sanitize_for_evidence(value: Any, secrets: Iterable[str | None] = ()) -> Any:
-    secret_values = [secret for secret in secrets if secret]
-    if isinstance(value, dict):
-        sanitized = {}
-        for key, item in value.items():
-            key_text = str(key)
-            if _sensitive_key(key_text):
-                sanitized[key_text] = "<REDACTED>"
-            else:
-                sanitized[key_text] = sanitize_for_evidence(item, secret_values)
-        return sanitized
-    if isinstance(value, list):
-        return [sanitize_for_evidence(item, secret_values) for item in value]
-    if isinstance(value, str):
-        redacted = value
-        for secret in secret_values:
-            redacted = redacted.replace(secret, "<REDACTED>")
-        return redacted
-    return value
-
-
-def _sensitive_key(key: str) -> bool:
-    normalized = key.lower().replace("_", "-")
-    return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 
 
 def _required_string(value: Any, site: str, field: str) -> str:

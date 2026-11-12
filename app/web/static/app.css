@@ -1076,3 +1076,20 @@ button:disabled {
     justify-content: flex-start;
   }
 }
+
+/* Operational review improvements: readable at desktop and narrow widths. */
+.content, .panel, .comparison-site, .result-card { min-width: 0; }
+pre, code, dd, .service-header h3, .panel-copy { overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; max-height: 28rem; overflow: auto; }
+.required-label { color: var(--warning); font-size: .8rem; margin-inline-start: .4rem; }
+.review-blocker { padding: 1rem; border-left: 4px solid var(--warning); background: #fff8e9; }
+.blocker-list { padding-left: 1.3rem; font-size: .9rem; }
+.blocker-list li + li { margin-top: .5rem; }
+.progress-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: .8rem; }
+.progress-grid > div { display: flex; flex-direction: column; padding: .8rem; background: var(--surface-soft); border-radius: 8px; }
+.progress-grid span { color: var(--muted); font-size: .85rem; }
+.decision-card:has(input:checked) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.decision-card:has(input:disabled), button:disabled { opacity: .6; cursor: not-allowed; }
+.final-confirmation { border-top: 4px solid var(--focus); }
+textarea:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #57b4b0; outline-offset: 3px; }
+@media (max-width: 700px) { .split-grid.embedded, .decision-grid { grid-template-columns: 1fr; } .heading-actions, .action-bar { flex-wrap: wrap; } }

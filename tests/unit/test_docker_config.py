@@ -69,6 +69,19 @@ class DockerConfigTests(unittest.TestCase):
         self.assertFalse(Path("config/rules.yml").exists())
         self.assertTrue(Path("deploy/docker/config/rules.yml").is_file())
 
+    def test_deployment_filesystem_scope_is_mapper_filesystems(self):
+        import yaml
+
+        rules = yaml.safe_load(
+            Path("deploy/docker/config/rules.yml").read_text(encoding="utf-8")
+        )
+        fs = rules["infrastructure"]["filesystem"]
+        self.assertEqual(fs["match"], "mapper")
+        self.assertEqual(fs["command"], "df -h | grep mapper")
+        self.assertEqual(fs["warning_percent"], 70)
+        self.assertEqual(fs["critical_percent"], 80)
+        self.assertTrue(fs["required"])
+
     def test_environment_examples_are_split_templates_only(self):
         root = Path(".env.example").read_text(encoding="utf-8")
         compose = Path("deploy/docker/.env.example").read_text(encoding="utf-8")
@@ -81,7 +94,7 @@ class DockerConfigTests(unittest.TestCase):
         examples = {
             "app.env.example": "WEEKEND_REPORT_APP_VERSION=<TBD>",
             "portainer.env.example": "PORTAINER_SITE1_TOKEN=<TBD>",
-            "doctor.env.example": "DOCTOR_SITE1_API_URL=<TBD>",
+            "doctor.env.example": "DOCTOR_SITE1_API_URL=<VERIFIED_DOCTOR_HEALTHCHECK_API_URL>",
             "rabbitmq.env.example": "RABBITMQ_SITE1_PASSWORD=<TBD>",
             "infrastructure.env.example": "SSH_PASSWORD=<TBD>",
             "splunk.env.example": "SPLUNK_DASHBOARD_COUNT=<TBD>",

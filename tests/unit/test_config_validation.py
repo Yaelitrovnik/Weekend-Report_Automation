@@ -74,10 +74,7 @@ class ConfigValidationTests(unittest.TestCase):
             line
             for line in report.lines()
             if "rabbitmq_expected.connections.site1" in line
-            and (
-                "tls_verify" in line
-                or "ca_file" in line
-            )
+            and ("tls_verify" in line or "ca_file" in line)
         ]
 
         self.assertEqual(
@@ -113,10 +110,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertFalse(report.ok)
 
         self.assertTrue(
-            any(
-                "rabbitmq_expected.connections.site1.ca_file" in line
-                for line in report.lines()
-            ),
+            any("rabbitmq_expected.connections.site1.ca_file" in line for line in report.lines()),
             report.lines(),
         )
 
@@ -153,7 +147,7 @@ class ConfigValidationTests(unittest.TestCase):
 
     def test_doctor_service_inventory_is_not_configured_from_env(self):
         config = load_valid_config()
-        self.assertNotIn("expected_services", config["doctor"]["doctor"])
+        self.assertEqual(config["doctor"]["doctor"]["expected_services"], [])
 
     def test_infrastructure_server_list_is_parsed_from_numbered_env(self):
         config = load_valid_config()
@@ -210,8 +204,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertTrue(
             any(
-                "servers.ssh.host_key_policy" in line
-                and "must be strict" in line
+                "servers.ssh.host_key_policy" in line and "must be strict" in line
                 for line in report.lines()
             ),
             report.lines(),
@@ -232,8 +225,7 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertTrue(
             any(
-                "nfs_mounts" in line
-                and "NFS validation was removed" in line
+                "nfs_mounts" in line and "NFS validation was removed" in line
                 for line in report.lines()
             ),
             report.lines(),
@@ -356,8 +348,7 @@ class ConfigValidationTests(unittest.TestCase):
                         config,
                         ctx,
                     )
-                    if item.check_id == "portainer.service.task_state"
-                    and item.site == "site1"
+                    if item.check_id == "portainer.service.task_state" and item.site == "site1"
                 ][0]
                 self.assertEqual(result.status, CheckStatus.WARNING)
                 config["rules"]["portainer"]["task_state_policy"]["starting"] = "FAIL"
@@ -368,8 +359,7 @@ class ConfigValidationTests(unittest.TestCase):
                         config,
                         ctx,
                     )
-                    if item.check_id == "portainer.service.task_state"
-                    and item.site == "site1"
+                    if item.check_id == "portainer.service.task_state" and item.site == "site1"
                 ][0]
                 self.assertEqual(result.status, CheckStatus.FAIL)
             finally:
@@ -397,9 +387,9 @@ class ConfigValidationTests(unittest.TestCase):
     def test_config_hash_redacts_secrets_but_tracks_policy(self):
         config = load_valid_config()
         secret_changed = copy.deepcopy(config)
-        secret_changed["portainer_expected"]["sites"]["site1"]["connection"]["auth"][
-            "token"
-        ] = "different-token"
+        secret_changed["portainer_expected"]["sites"]["site1"]["connection"]["auth"]["token"] = (
+            "different-token"
+        )
         policy_changed = copy.deepcopy(config)
         policy_changed["servers"]["ssh"]["host_key_policy"] = "accept-new"
 
@@ -411,6 +401,7 @@ class ConfigValidationTests(unittest.TestCase):
             config_hash("config", effective_config=config),
             config_hash("config", effective_config=policy_changed),
         )
+
     def test_manual_db_check_is_loaded_from_env(self):
         config = load_valid_config()
         self.assertEqual(
@@ -418,9 +409,7 @@ class ConfigValidationTests(unittest.TestCase):
             {
                 "enabled": True,
                 "display_name": "Database Synchronization Check",
-                "script_path": (
-                    "C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"
-                ),
+                "script_path": ("C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"),
                 "required": True,
             },
         )
@@ -446,18 +435,11 @@ class ConfigValidationTests(unittest.TestCase):
             production_preflight=False,
         )
         self.assertFalse(report.ok)
-        self.assertTrue(
-            any(
-                "manual_db_check.display_name" in line
-                for line in report.lines()
-            )
-        )
+        self.assertTrue(any("manual_db_check.display_name" in line for line in report.lines()))
 
     def test_manual_db_check_requires_absolute_ps1_path_when_enabled(self):
         env = valid_env()
-        env["WEEKEND_REPORT_DB_MANUAL_CHECK_SCRIPT_PATH"] = (
-            "database_sync_check.ps1"
-        )
+        env["WEEKEND_REPORT_DB_MANUAL_CHECK_SCRIPT_PATH"] = "database_sync_check.ps1"
         config = load_config_dir(
             "deploy/docker/config",
             env=env,
@@ -467,12 +449,7 @@ class ConfigValidationTests(unittest.TestCase):
             production_preflight=False,
         )
         self.assertFalse(report.ok)
-        self.assertTrue(
-            any(
-                "manual_db_check.script_path" in line
-                for line in report.lines()
-            )
-        )
+        self.assertTrue(any("manual_db_check.script_path" in line for line in report.lines()))
 
     def test_manual_db_check_required_cannot_be_true_when_disabled(self):
         env = valid_env()
@@ -487,12 +464,8 @@ class ConfigValidationTests(unittest.TestCase):
             production_preflight=False,
         )
         self.assertFalse(report.ok)
-        self.assertTrue(
-            any(
-                "manual_db_check.required" in line
-                for line in report.lines()
-            )
-        )
+        self.assertTrue(any("manual_db_check.required" in line for line in report.lines()))
+
     def test_manual_db_check_requires_ps1_extension(self):
         env = valid_env()
         env["WEEKEND_REPORT_DB_MANUAL_CHECK_SCRIPT_PATH"] = (
@@ -507,12 +480,7 @@ class ConfigValidationTests(unittest.TestCase):
             production_preflight=False,
         )
         self.assertFalse(report.ok)
-        self.assertTrue(
-            any(
-                "must reference a .ps1 file" in line
-                for line in report.lines()
-            )
-        )
+        self.assertTrue(any("must reference a .ps1 file" in line for line in report.lines()))
 
 
 if __name__ == "__main__":

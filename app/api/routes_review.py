@@ -15,6 +15,7 @@ from app.domain import (
     CheckResult,
     CheckStatus,
     NoteScope,
+    ReviewDecision,
     RunState,
     to_jsonable,
 )
@@ -27,10 +28,8 @@ from app.orchestrator.aggregation import (
 from app.orchestrator.aggregation import (
     site_summaries as aggregate_site_summaries,
 )
-from app.review.manual_db import (
-    build_manual_db_file_uri,
-    build_manual_db_powershell_command,
-)
+from app.orchestrator.execution_plan import build_execution_plan
+from app.review.finalization import validate_finalization_readiness
 from app.review.notes import (
     general_notes_enabled,
     notes_by_key,
@@ -110,26 +109,19 @@ def _review_context(
     manual_db_config = config.get("manual_db_check", {})
     manual_db_review = repo.get_manual_db_review(run_id)
     manual_db_enabled = (
-        isinstance(manual_db_config, dict)
-        and manual_db_config.get("enabled") is True
+        isinstance(manual_db_config, dict) and manual_db_config.get("enabled") is True
     )
     manual_db_context: dict[str, Any] = {
         "enabled": manual_db_enabled,
         "required": False,
         "display_name": "",
         "script_path": "",
-        "powershell_command": "",
-        "file_uri": "",
     }
     if manual_db_enabled:
-        script_path = str(
-            manual_db_config.get("script_path", "")
-        )
+        script_path = str(manual_db_config.get("script_path", ""))
         manual_db_context.update(
             {
-                "required": (
-                    manual_db_config.get("required") is True
-                ),
+                "required": (manual_db_config.get("required") is True),
                 "display_name": str(
                     manual_db_config.get(
                         "display_name",
@@ -137,14 +129,6 @@ def _review_context(
                     )
                 ),
                 "script_path": script_path,
-                "powershell_command": (
-                    build_manual_db_powershell_command(
-                        script_path
-                    )
-                ),
-                "file_uri": build_manual_db_file_uri(
-                    script_path
-                ),
             }
         )
 
@@ -164,11 +148,34 @@ def _review_context(
         "recovery": config.get("rules", {}).get("recovery", {}),
         "manual_db_check": manual_db_context,
         "manual_db_review": (
-            to_jsonable(manual_db_review)
-            if manual_db_review is not None
-            else None
+            to_jsonable(manual_db_review) if manual_db_review is not None else None
         ),
-        "manual_db_editable": (run.state == RunState.REVIEW_READY),
+        "manual_db_editable": (run.state == RunState.REVIEW_READY and not run.final_snapshot_path),
+        "review_policy": config.get("rules", {}).get("review", {}),
+        "can_finalize": run.state == RunState.REVIEW_READY,
+        "snapshot_frozen": bool(run.final_snapshot_path),
+        "approval_blockers": validate_finalization_readiness(
+            repo, config, run_id, ReviewDecision.APPROVE
+        ),
+        "rejection_blockers": validate_finalization_readiness(
+            repo, config, run_id, ReviewDecision.REJECT
+        ),
+        "parity_applicability": "NOT_APPLICABLE"
+        if len(config.get("sites", {}).get("sites", [])) == 1
+        else "APPLICABLE",
+        "execution_progress": [
+            {
+                "module": step.module,
+                "state": "Complete"
+                if any(r.module == step.module for r in all_results)
+                else "Running"
+                if run.current_module == step.module and run.state == RunState.RUNNING
+                else "Pending"
+                if run.state in {RunState.CREATED, RunState.RUNNING}
+                else "No results",
+            }
+            for step in build_execution_plan(config)
+        ],
     }
     if module is not None:
         context["module"] = module
@@ -230,7 +237,8 @@ def _presentation_context(
         "site_summaries": site_summary_items,
         "module_site_summaries": _site_summary_items(page_results, config),
         "module_parity_results": [
-            result for result in presented_all
+            result
+            for result in presented_all
             if len(runtime_sites) > 1
             and result["module"] == "site_parity"
             and result["check_id"].startswith(f"parity.{active_module}.")
@@ -332,8 +340,7 @@ def _site_summary_items(
     summaries = {item.site: item for item in aggregate_site_summaries(results, config)}
     sites_config = config.get("sites", {}).get("sites", [])
     labels = {
-        site["id"]: site.get("display_name") or _site_label(site["id"])
-        for site in sites_config
+        site["id"]: site.get("display_name") or _site_label(site["id"]) for site in sites_config
     }
     site_order = list(labels)
     for result in results:
@@ -428,6 +435,7 @@ def _portainer_services(
                     "site": site,
                     "label": site_labels.get(site, _site_label(site)) if site else "Global",
                     "status": _aggregate_presented(checks),
+                    "mode": _portainer_metric(checks, "service_mode"),
                     "desired": _portainer_metric(checks, "desired_replicas"),
                     "running": _portainer_metric(checks, "running_replicas"),
                     "healthy": _portainer_metric(checks, "healthy_replicas"),
@@ -453,7 +461,7 @@ def _portainer_metric(results: list[dict[str, Any]], metric: str) -> str:
         expected = result.get("expected_value")
         actual = result.get("actual_value")
         if isinstance(actual, dict) and metric in actual:
-            return str(actual.get(metric))
+            return str(actual[metric]) if actual[metric] is not None else "Unavailable"
         if (
             isinstance(expected, dict)
             and metric in expected

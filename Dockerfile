@@ -18,7 +18,7 @@ COPY scripts /app/scripts
 COPY TAG pyproject.toml /app/
 
 # Fail offline builds using an outdated base; never install packages at runtime.
-RUN python -c "import paramiko; assert paramiko.__version__ == '5.0.1'"
+RUN python -c "import paramiko, reportlab; assert reportlab.Version == '4.4.10'; assert paramiko.__version__ == '5.0.1'"
 
 RUN mkdir -p /app/runs /app/data /app/config \
     && chown -R weekend:weekend /app

@@ -29,9 +29,7 @@ class FinalizationReadinessTests(unittest.TestCase):
         for name, rule in config["rules"]["modules"].items():
             rule["enabled"] = name == module
             rule["required"] = name == module
-        config["rules"]["review"]["required_module_notes"] = [
-            module
-        ]
+        config["rules"]["review"]["required_module_notes"] = [module]
         config["rules"]["review"]["general_note_required"] = False
         return config
 
@@ -47,10 +45,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             ManualDBReview(
                 run_id=run_id,
                 display_name="Database Synchronization Check",
-                script_path=(
-                    "C:\\Scripts\\DatabaseSync\\"
-                    "database_sync_check.ps1"
-                ),
+                script_path=("C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"),
                 result=result,
                 comment=comment,
                 reviewer="reviewer",
@@ -59,15 +54,9 @@ class FinalizationReadinessTests(unittest.TestCase):
 
     def db_policy_only_config(self) -> dict:
         config = self.single_module_config()
-        config["rules"]["review"][
-            "required_module_notes"
-        ] = []
-        config["rules"]["review"][
-            "general_note_required"
-        ] = False
-        config["splunk_dashboards"][
-            "dashboards"
-        ] = []
+        config["rules"]["review"]["required_module_notes"] = []
+        config["rules"]["review"]["general_note_required"] = False
+        config["splunk_dashboards"]["dashboards"] = []
         return config
 
     def make_review_ready_run(
@@ -77,9 +66,7 @@ class FinalizationReadinessTests(unittest.TestCase):
         result_status: CheckStatus = CheckStatus.PASS,
         module: str = "portainer",
         metadata: dict | None = None,
-        manual_db_result: ManualDBReviewResult | None = (
-            ManualDBReviewResult.PASS
-        ),
+        manual_db_result: ManualDBReviewResult | None = (ManualDBReviewResult.PASS),
     ) -> str:
         self.repo.create_run(started_by="tester", run_id=run_id)
         self.repo.claim_next_run("worker")
@@ -130,13 +117,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             run_id,
             ReviewDecision.APPROVE,
         )
-        self.assertTrue(
-            any(
-                "must be completed before finalization"
-                in error
-                for error in errors
-            )
-        )
+        self.assertTrue(any("must be completed before finalization" in error for error in errors))
 
     def test_manual_db_review_required_before_reject(self):
         config = self.db_policy_only_config()
@@ -150,13 +131,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             run_id,
             ReviewDecision.REJECT,
         )
-        self.assertTrue(
-            any(
-                "must be completed before finalization"
-                in error
-                for error in errors
-            )
-        )
+        self.assertTrue(any("must be completed before finalization" in error for error in errors))
 
     def test_manual_db_pass_allows_approve(self):
         config = self.db_policy_only_config()
@@ -174,7 +149,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             [],
         )
 
-    def test_manual_db_pass_blocks_reject(self):
+    def test_manual_db_pass_allows_reject(self):
         config = self.db_policy_only_config()
         run_id = self.make_review_ready_run(
             run_id="WR-20260910-000004",
@@ -186,13 +161,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             run_id,
             ReviewDecision.REJECT,
         )
-        self.assertTrue(
-            any(
-                "REJECT is not permitted"
-                in error
-                for error in errors
-            )
-        )
+        self.assertEqual(errors, [])
 
     def test_manual_db_fail_blocks_approve(self):
         config = self.db_policy_only_config()
@@ -206,15 +175,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             run_id,
             ReviewDecision.APPROVE,
         )
-        self.assertTrue(
-            any(
-                "APPROVE requires"
-                in error
-                and "PASS"
-                in error
-                for error in errors
-            )
-        )
+        self.assertTrue(any("APPROVE requires" in error and "PASS" in error for error in errors))
 
     def test_manual_db_fail_allows_reject(self):
         config = self.db_policy_only_config()
@@ -244,15 +205,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             run_id,
             ReviewDecision.APPROVE,
         )
-        self.assertTrue(
-            any(
-                "APPROVE requires"
-                in error
-                and "NOT RUN"
-                in error
-                for error in errors
-            )
-        )
+        self.assertTrue(any("APPROVE requires" in error and "NOT RUN" in error for error in errors))
 
     def test_manual_db_not_run_allows_reject(self):
         config = self.db_policy_only_config()
@@ -390,11 +343,7 @@ class FinalizationReadinessTests(unittest.TestCase):
             ReviewDecision.APPROVE,
         )
         self.assertTrue(
-            any(
-                "Splunk dashboard errors requires a non-empty note."
-                in error
-                for error in errors
-            ),
+            any("Splunk dashboard errors requires a non-empty note." in error for error in errors),
             errors,
         )
         # A non-empty note satisfies note_required even though
@@ -498,7 +447,9 @@ class FinalizationReadinessTests(unittest.TestCase):
     def test_reject_policy_can_block_reject(self):
         config = self.single_module_config()
         config["rules"]["review"]["reject_allowed"] = False
-        run_id = self.make_review_ready_run(manual_db_result=ManualDBReviewResult.FAIL,)
+        run_id = self.make_review_ready_run(
+            manual_db_result=ManualDBReviewResult.FAIL,
+        )
         errors = validate_finalization_readiness(
             self.repo,
             config,

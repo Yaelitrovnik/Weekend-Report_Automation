@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import ssl
 import time
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ SOCKET_CRITICAL_RATIO = 1.00
 
 PROCESS_WARNING_RATIO = 0.50
 PROCESS_CRITICAL_RATIO = 0.75
+
 
 class RabbitMQError(RuntimeError):
     def __init__(
@@ -327,6 +329,7 @@ def _client_settings(site_id: str, connection: Any) -> RabbitMQClientSettings:
         ),
     )
 
+
 def _tls_verify(
     connection: dict[str, Any],
     site_id: str,
@@ -364,6 +367,7 @@ def _tls_verify(
         "RabbitMQ tls_verify must be true or custom_ca",
         site=site_id,
     )
+
 
 def _collect_queue_snapshots(
     client: RabbitMQClient,
@@ -507,6 +511,7 @@ def _known_resource_states(node: dict[str, Any]) -> dict[str, str]:
 
     return states
 
+
 def _ratio_state(
     used: Any,
     total: Any,
@@ -548,6 +553,7 @@ def _is_non_negative_number(value: Any) -> bool:
     return (
         isinstance(value, int | float)
         and not isinstance(value, bool)
+        and math.isfinite(value)
         and value >= 0
     )
 
@@ -556,8 +562,10 @@ def _is_positive_number(value: Any) -> bool:
     return (
         isinstance(value, int | float)
         and not isinstance(value, bool)
+        and math.isfinite(value)
         and value > 0
     )
+
 
 def _required_string(value: Any, site: str, field: str) -> str:
     if not isinstance(value, str) or not value.strip() or is_unresolved_placeholder(value):

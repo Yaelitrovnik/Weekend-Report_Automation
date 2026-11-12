@@ -1,4 +1,7 @@
 (function () {
+  if (document.body.hasAttribute("data-review-readonly")) {
+    document.querySelectorAll("[data-note-endpoint], [data-splunk-reviewed], [data-action='save-notes']").forEach((control) => { control.disabled = true; });
+  }
   function csrfHeaders() {
     const token = document.querySelector("meta[name='weekend-report-csrf-token']")?.content;
     return token ? { "X-CSRF-Token": token } : {};
@@ -38,7 +41,7 @@
 
   async function saveNote(textarea) {
     const endpoint = textarea.dataset.noteEndpoint;
-    if (!endpoint) {
+    if (!endpoint || textarea.disabled) {
       return null;
     }
     const card = textarea.closest("[data-splunk-dashboard-card]");
@@ -82,7 +85,10 @@
   }
 
   async function saveAllNotes() {
-    const notes = Array.from(document.querySelectorAll("[data-note-endpoint]"));
+    const notes = Array.from(new Map(
+      Array.from(document.querySelectorAll("[data-note-endpoint]"))
+        .map((field) => [field.dataset.noteEndpoint, field])
+    ).values());
     for (const textarea of notes) {
       await saveNote(textarea);
     }
@@ -138,39 +144,6 @@
 
     return response.json();
   }
-  async function copyManualDbCommand() {
-    const command =
-      document.querySelector("[data-manual-db-command]")
-        ?.textContent
-        ?.trim();
-    if (!command) {
-      throw new Error(
-        "PowerShell command is not available."
-      );
-    }
-    if (
-      navigator.clipboard &&
-      window.isSecureContext
-    ) {
-      await navigator.clipboard.writeText(command);
-      return;
-    }
-    const textarea = document.createElement("textarea");
-    textarea.value = command;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    const copied = document.execCommand("copy");
-    textarea.remove();
-    if (!copied) {
-      throw new Error(
-        "Unable to copy the PowerShell command."
-      );
-    }
-  }
-
   function selectedDecision() {
     return document.querySelector("input[name='review-decision']:checked");
   }
@@ -187,6 +160,9 @@
     const reviewer = reviewerName();
     if (!reviewer) {
       throw new Error("Enter the reviewer name before final confirmation.");
+    }
+    if (selected.value === "REJECT" && !document.querySelector("[data-rejection-reason]")?.value.trim()) {
+      throw new Error("Enter a rejection reason before final confirmation.");
     }
     const panel = document.querySelector("[data-finalize-confirmation]");
     if (button.dataset.confirmationDecision !== selected.value) {
@@ -231,10 +207,19 @@
         "Content-Type": "application/json",
         ...csrfHeaders(),
       },
-      body: JSON.stringify({ decision: selected.value, reviewer }),
+      body: JSON.stringify({ decision: selected.value, reviewer,
+        rejection_reason: selected.value === "REJECT" ? document.querySelector("[data-rejection-reason]")?.value.trim() : null }),
     });
     if (!response.ok) {
       const body = await readError(response);
+      if (response.headers.get("X-Review-Snapshot-Frozen") === "1") {
+        document.body.setAttribute("data-review-readonly", "");
+        document.querySelectorAll(
+          "[data-note-endpoint], [data-splunk-reviewed], [data-action='save-notes'], " +
+          "[data-manual-db-comment], input[name='manual-db-result'], " +
+          "[data-action='save-manual-db-review']"
+        ).forEach((control) => { control.disabled = true; });
+      }
       throw new Error(`finalize failed: ${response.status} ${body}`);
     }
     return response.json();
@@ -284,6 +269,20 @@
     slot.replaceChildren(link);
   }
 
+  document.addEventListener("input", (event) => {
+    const field = event.target;
+    if (field.matches("[data-note-endpoint]")) {
+      document.querySelectorAll("[data-note-endpoint]").forEach((other) => {
+        if (other.dataset.noteEndpoint === field.dataset.noteEndpoint) {
+          other.value = field.value;
+        }
+      });
+    }
+    if (field.matches("[data-final-reviewer-name], [data-rejection-reason]")) {
+      resetFinalConfirmation();
+    }
+  });
+
   document.addEventListener("change", (event) => {
     if (event.target.matches("input[name='review-decision']")) {
       resetFinalConfirmation();
@@ -326,21 +325,6 @@
         const count = await saveAllNotes();
         setStatus(`${count} note field${count === 1 ? "" : "s"} saved.`, "success");
         notify("Notes saved.", "success");
-      } else if (button.dataset.action === "save-notes") {
-        button.disabled = true;
-        const count = await saveAllNotes();
-        setStatus(`${count} note field${count === 1 ? "" : "s"} saved.`, "success");
-        notify("Notes saved.", "success");
-      } else if (button.dataset.action === "copy-manual-db-command") {
-        await copyManualDbCommand();
-        setStatus(
-          "PowerShell command copied.",
-          "success"
-        );
-        notify(
-          "PowerShell command copied.",
-          "success"
-        );
       } else if (button.dataset.action === "save-manual-db-review") {
         button.disabled = true;
         const result = await saveManualDbReview();
@@ -366,6 +350,14 @@
         button.disabled = true;
         const result = await finalize(button.dataset.runId);
         exposeFinalPdf(result.final_pdf_url);
+        document.body.setAttribute("data-review-readonly", "");
+        document.querySelectorAll(
+          "[data-note-endpoint], [data-splunk-reviewed], [data-action='save-notes'], " +
+          "[data-manual-db-comment], input[name='manual-db-result'], " +
+          "[data-action='save-manual-db-review'], [data-final-reviewer-name], " +
+          "[data-rejection-reason], input[name='review-decision'], [data-action='finalize']"
+        ).forEach((control) => { control.disabled = true; });
+        button.dataset.finalized = "true";
         setStatus(
           `Final confirmation saved: ${result.decision}.`,
           "success"
@@ -384,7 +376,9 @@
       setStatus(error.message, "error");
       notify(error.message, "error");
     } finally {
-      button.disabled = false;
+      if (button.dataset.finalized !== "true") {
+        button.disabled = false;
+      }
     }
   });
 })();

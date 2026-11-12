@@ -50,15 +50,9 @@ class RunWorkflowTests(unittest.TestCase):
             ManualDBReview(
                 run_id=run_id,
                 display_name="Database Synchronization Check",
-                script_path=(
-                    "C:\\Scripts\\DatabaseSync\\"
-                    "database_sync_check.ps1"
-                ),
+                script_path=("C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"),
                 result=result,
-                comment=(
-                    "Database synchronization manual check "
-                    f"recorded as {result.value}."
-                ),
+                comment=(f"Database synchronization manual check recorded as {result.value}."),
                 reviewer="reviewer",
             ),
         )
@@ -97,10 +91,7 @@ class RunWorkflowTests(unittest.TestCase):
                     reviewed=True,
                 )
             )
-        if (
-            review.get("general_notes_enabled")
-            and review.get("general_note_required")
-        ):
+        if review.get("general_notes_enabled") and review.get("general_note_required"):
             self.repo.save_note(
                 ReviewNote(
                     run_id,
@@ -148,9 +139,7 @@ class RunWorkflowTests(unittest.TestCase):
             run.run_id,
             ManualDBReviewResult.PASS,
         )
-        saved_manual_db = self.repo.get_manual_db_review(
-            run.run_id
-        )
+        saved_manual_db = self.repo.get_manual_db_review(run.run_id)
         self.assertIsNotNone(saved_manual_db)
         assert saved_manual_db is not None
         snapshot = finalize_run(
@@ -161,9 +150,7 @@ class RunWorkflowTests(unittest.TestCase):
             "reviewer",
             ReviewDecision.APPROVE,
         )
-        manual_db_snapshot = snapshot[
-            "manual_db_review"
-        ]
+        manual_db_snapshot = snapshot["manual_db_review"]
         self.assertIsNotNone(manual_db_snapshot)
         self.assertEqual(
             manual_db_snapshot["display_name"],
@@ -196,41 +183,25 @@ class RunWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             snapshot["snapshot_version"],
-            2,
+            3,
         )
         self.assertEqual(snapshot["review"]["reviewer"], "reviewer")
-        final_run = self.repo.get_run(
-            run.run_id
-        )
-        self.assertIsNotNone(
-            final_run.final_snapshot_path
-        )
+        final_run = self.repo.get_run(run.run_id)
+        self.assertIsNotNone(final_run.final_snapshot_path)
         assert final_run.final_snapshot_path is not None
-        frozen_snapshot_path = (
-            self.evidence.root
-            / final_run.final_snapshot_path
-        )
-        frozen_snapshot = json.loads(
-            frozen_snapshot_path.read_text(
-                encoding="utf-8"
-            )
-        )
+        frozen_snapshot_path = self.evidence.root / final_run.final_snapshot_path
+        frozen_snapshot = json.loads(frozen_snapshot_path.read_text(encoding="utf-8"))
         self.assertEqual(
             frozen_snapshot["manual_db_review"],
             snapshot["manual_db_review"],
         )
         self.assertEqual(
-            frozen_snapshot["manual_db_review"][
-                "final_decision"
-            ],
+            frozen_snapshot["manual_db_review"]["final_decision"],
             "APPROVE",
         )
         self.assertIsNotNone(final_run.final_pdf_path)
         assert final_run.final_pdf_path is not None
-        pdf_path = (
-            self.evidence.root
-            / final_run.final_pdf_path
-        )
+        pdf_path = self.evidence.root / final_run.final_pdf_path
         pdf_data = pdf_path.read_bytes()
         self.assertIn(
             b"Manual Database Synchronization Check",
@@ -295,6 +266,7 @@ class RunWorkflowTests(unittest.TestCase):
             run.run_id,
             "reviewer",
             ReviewDecision.REJECT,
+            rejection_reason="Rejected after operational review.",
         )
         self.assertEqual(self.repo.get_run(run.run_id).state, RunState.REJECTED)
         self.assertEqual(
@@ -302,9 +274,7 @@ class RunWorkflowTests(unittest.TestCase):
             "FAIL",
         )
         self.assertEqual(
-            snapshot["manual_db_review"][
-                "final_decision"
-            ],
+            snapshot["manual_db_review"]["final_decision"],
             "REJECT",
         )
 
@@ -329,6 +299,7 @@ class RunWorkflowTests(unittest.TestCase):
                 run.run_id,
                 "reviewer",
                 ReviewDecision.REJECT,
+                rejection_reason="Rejected after operational review.",
                 fail_pdf=True,
             )
         self.assertTrue(self.repo.get_run(run.run_id).final_snapshot_path)
