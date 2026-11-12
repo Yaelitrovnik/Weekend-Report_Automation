@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app.api.dependencies import get_config, get_mutation_guard, get_repository
 from app.config.validation import validate_config
 from app.domain import SYSTEM_ACTOR
+from app.observability import event
 from app.orchestrator.lock import DuplicateActiveRun, InvalidRunTransition
 from app.runtime_identity import current_runtime_identity
 from app.security import csrf_token_for_template
@@ -59,6 +60,7 @@ def create_run(
         )
     except DuplicateActiveRun as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    event("run_accepted", run_id=run.run_id)
     return {"run_id": run.run_id, "state": run.state}
 
 
@@ -82,6 +84,7 @@ def create_run_form(
         )
     except DuplicateActiveRun:
         return RedirectResponse("/", status_code=303)
+    event("run_accepted", run_id=run.run_id)
     return RedirectResponse(f"/runs/{run.run_id}", status_code=303)
 
 

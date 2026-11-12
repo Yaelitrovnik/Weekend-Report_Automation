@@ -1,76 +1,12 @@
 from __future__ import annotations
 
 from pathlib import PureWindowsPath
-from urllib.parse import quote
 
 from app.domain import ManualDBReview, ManualDBReviewResult
 
 
 class ManualDBReviewValidationError(ValueError):
     pass
-
-def build_manual_db_powershell_command(
-    script_path: str,
-) -> str:
-    path = script_path.strip()
-
-    if any(char in path for char in ('"', "\r", "\n")):
-        raise ManualDBReviewValidationError(
-            "script_path contains unsupported characters"
-        )
-
-    windows_path = PureWindowsPath(path)
-
-    if not windows_path.is_absolute():
-        raise ManualDBReviewValidationError(
-            "script_path must be an absolute Windows path"
-        )
-
-    if windows_path.suffix.lower() != ".ps1":
-        raise ManualDBReviewValidationError(
-            "script_path must reference a .ps1 file"
-        )
-
-    return (
-        'powershell.exe -ExecutionPolicy Bypass '
-        f'-File "{path}"'
-    )
-
-
-def build_manual_db_file_uri(
-    script_path: str,
-) -> str:
-    path = script_path.strip()
-
-    if any(
-        char in path
-        for char in ('"', "\r", "\n")
-    ):
-        raise ManualDBReviewValidationError(
-            "script_path contains unsupported characters"
-        )
-
-    windows_path = PureWindowsPath(path)
-
-    if not windows_path.is_absolute():
-        raise ManualDBReviewValidationError(
-            "script_path must be an absolute Windows path"
-        )
-
-    if windows_path.suffix.lower() != ".ps1":
-        raise ManualDBReviewValidationError(
-            "script_path must reference a .ps1 file"
-        )
-
-    posix_path = windows_path.as_posix()
-
-    return (
-        "file:///"
-        + quote(
-            posix_path,
-            safe="/:",
-        )
-    )
 
 def validate_manual_db_review(review: ManualDBReview) -> None:
     errors: list[str] = []

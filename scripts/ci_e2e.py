@@ -128,15 +128,9 @@ def save_manual_db_result(
         ManualDBReview(
             run_id=run_id,
             display_name="Database Synchronization Check",
-            script_path=(
-                "C:\\Scripts\\DatabaseSync\\"
-                "database_sync_check.ps1"
-            ),
+            script_path=("C:\\Scripts\\DatabaseSync\\database_sync_check.ps1"),
             result=result,
-            comment=(
-                "CI E2E manual database synchronization "
-                f"result: {result.value}."
-            ),
+            comment=(f"CI E2E manual database synchronization result: {result.value}."),
             reviewer="ci-reviewer",
         ),
     )
@@ -161,13 +155,10 @@ def assert_finalization_blocked(
         )
     except FinalizationReadinessError as exc:
         assert expected_fragment in str(exc), (
-            f"expected finalization error containing "
-            f"{expected_fragment!r}, got {str(exc)!r}"
+            f"expected finalization error containing {expected_fragment!r}, got {str(exc)!r}"
         )
     else:
-        raise AssertionError(
-            f"{decision.value} unexpectedly succeeded for {run_id}"
-        )
+        raise AssertionError(f"{decision.value} unexpectedly succeeded for {run_id}")
 
     run = repo.get_run(run_id)
     assert run.state is RunState.REVIEW_READY
@@ -214,9 +205,7 @@ def assert_manual_db_final_artifacts(
     assert f"Result: {expected_result}".encode("latin-1") in pdf_bytes
     assert b"Execution method: Performed locally by reviewer" in pdf_bytes
     assert b"Reviewer: ci-reviewer" in pdf_bytes
-    assert pdf_bytes.index(b"Evidence References") < pdf_bytes.index(
-        b"Reviewer Confirmation"
-    )
+    assert pdf_bytes.index(b"Evidence References") < pdf_bytes.index(b"Reviewer Confirmation")
 
 
 def run_no_review_scenario(
@@ -249,10 +238,7 @@ def run_no_review_scenario(
             config,
             run_id,
             ReviewDecision.APPROVE,
-            (
-                "Manual Database Synchronization Check "
-                "must be completed before finalization."
-            ),
+            ("Manual Database Synchronization Check must be completed before finalization."),
         )
 
         assert_finalization_blocked(
@@ -261,10 +247,7 @@ def run_no_review_scenario(
             config,
             run_id,
             ReviewDecision.REJECT,
-            (
-                "Manual Database Synchronization Check "
-                "must be completed before finalization."
-            ),
+            ("Manual Database Synchronization Check must be completed before finalization."),
         )
     finally:
         repo.close()
@@ -287,10 +270,7 @@ def run_pass_scenario(
             run_id,
         )
 
-        before_statuses = {
-            item.id: item.status.value
-            for item in repo.list_results(run_id)
-        }
+        before_statuses = {item.id: item.status.value for item in repo.list_results(run_id)}
 
         note_texts = save_required_approval_notes(
             repo,
@@ -304,17 +284,9 @@ def run_pass_scenario(
             ManualDBReviewResult.PASS,
         )
 
-        assert_finalization_blocked(
-            repo,
-            evidence,
-            config,
-            run_id,
-            ReviewDecision.REJECT,
-            (
-                "REJECT is not permitted when Manual Database "
-                "Synchronization Check result is PASS."
-            ),
-        )
+        from app.review.finalization import validate_finalization_readiness
+
+        assert validate_finalization_readiness(repo, config, run_id, ReviewDecision.REJECT) == []
 
         snapshot = finalize_run(
             repo,
@@ -329,46 +301,26 @@ def run_pass_scenario(
         assert finalized.state is RunState.APPROVED
         assert finalized.final_pdf_path is not None
 
-        after_statuses = {
-            item.id: item.status.value
-            for item in repo.list_results(run_id)
-        }
+        after_statuses = {item.id: item.status.value for item in repo.list_results(run_id)}
 
-        assert before_statuses == after_statuses, (
-            "automated statuses changed during review"
-        )
+        assert before_statuses == after_statuses, "automated statuses changed during review"
 
         persisted_notes = repo.list_notes(run_id)
-        snapshot_ids = {
-            item["id"]
-            for item in snapshot["notes"]
-        }
-        persisted_ids = {
-            item.id
-            for item in persisted_notes
-        }
+        snapshot_ids = {item["id"] for item in snapshot["notes"]}
+        persisted_ids = {item.id for item in persisted_notes}
 
-        assert persisted_ids == snapshot_ids, (
-            "snapshot did not contain every persisted note"
-        )
+        assert persisted_ids == snapshot_ids, "snapshot did not contain every persisted note"
 
-        snapshot_texts = {
-            item["note"]
-            for item in snapshot["notes"]
-        }
+        snapshot_texts = {item["note"] for item in snapshot["notes"]}
 
         for text in note_texts:
-            assert text in snapshot_texts, (
-                f"missing note from snapshot: {text}"
-            )
+            assert text in snapshot_texts, f"missing note from snapshot: {text}"
 
         pdf_path = evidence.root / finalized.final_pdf_path
         pdf_bytes = pdf_path.read_bytes()
 
         for text in note_texts:
-            assert text.encode("latin-1") in pdf_bytes, (
-                f"missing note from final PDF: {text}"
-            )
+            assert text.encode("latin-1") in pdf_bytes, f"missing note from final PDF: {text}"
 
         assert_manual_db_final_artifacts(
             repo,
@@ -379,9 +331,7 @@ def run_pass_scenario(
             "APPROVE",
         )
 
-        assert repo.list_evidence(run_id), (
-            "safe E2E produced no evidence"
-        )
+        assert repo.list_evidence(run_id), "safe E2E produced no evidence"
     finally:
         repo.close()
 
@@ -434,6 +384,7 @@ def run_fail_scenario(
             run_id,
             "ci-reviewer",
             ReviewDecision.REJECT,
+            rejection_reason="Operational rejection recorded by CI fixture reviewer.",
         )
 
         assert repo.get_run(run_id).state is RunState.REJECTED
@@ -498,6 +449,7 @@ def run_not_run_scenario(
             run_id,
             "ci-reviewer",
             ReviewDecision.REJECT,
+            rejection_reason="Operational rejection recorded by CI fixture reviewer.",
         )
 
         assert repo.get_run(run_id).state is RunState.REJECTED
@@ -518,15 +470,7 @@ def main() -> int:
     config = load_fixture_config()
 
     approval_config = copy.deepcopy(config)
-    approval_config[
-        "rules"
-    ][
-        "review"
-    ][
-        "approval_status_policy"
-    ][
-        "FAIL"
-    ] = "REQUIRE_NOTE"
+    approval_config["rules"]["review"]["approval_status_policy"]["FAIL"] = "REQUIRE_NOTE"
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

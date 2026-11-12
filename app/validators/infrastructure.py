@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -9,18 +10,16 @@ from app.time_utils import iso_now
 from app.validators.base import Validator
 from app.validators.engine import threshold_status
 
-DF_RE = re.compile(
-    r"(?P<fs>\S+)\s+\S+\s+\S+\s+\S+\s+(?P<use>\d+)%\s+(?P<mount>/[^\r\n]*)"
-)
+DF_RE = re.compile(r"(?P<fs>\S+)\s+\S+\s+\S+\s+\S+\s+(?P<use>\d+)%\s+(?P<mount>/[^\r\n]*)")
 
 
-def parse_df(text: str) -> list[dict[str, Any]]:
+def parse_df(text: str, match_policy: str = "mapper") -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
-        if not line.strip():
+        if not line.strip() or (match_policy == "root" and line.strip().startswith("Filesystem")):
             continue
         match = DF_RE.fullmatch(line.strip())
-        if match is None or "mapper" not in match.group("fs"):
+        if match is None or (match_policy == "mapper" and "mapper" not in match.group("fs")):
             raise ValueError(f"unparseable mapper filesystem output at line {line_number}")
         rows.append(
             {
@@ -142,7 +141,9 @@ def _filesystem_results(
         raw = outputs.get("df")
         if not isinstance(raw, str):
             raise ValueError("filesystem output is unavailable")
-        rows = parse_df(raw)
+        rows = parse_df(raw, filesystem.get("match", "mapper"))
+        if filesystem.get("match") == "root":
+            rows = [row for row in rows if row["mountpoint"] == "/"]
     except ValueError as exc:
         return [
             _r(
@@ -167,7 +168,9 @@ def _filesystem_results(
                 filesystem,
                 {"filesystems": [], "df": raw},
                 CheckStatus.FAIL,
-                "No mapper filesystems were found",
+                "No required filesystems were found"
+                if filesystem.get("match") == "root"
+                else "No mapper filesystems were found",
                 started,
             )
         ]
@@ -234,7 +237,11 @@ def _chrony_results(
             )
         )
     else:
-        status = CheckStatus.PASS if timezone == expected_timezone else CheckStatus.FAIL
+        status = (
+            CheckStatus.PASS
+            if timezone in [expected_timezone, *expected.get("timezone_aliases", [])]
+            else CheckStatus.FAIL
+        )
         results.append(
             _r(
                 run_id,
@@ -244,7 +251,9 @@ def _chrony_results(
                 {"timezone": expected_timezone},
                 {"timezone": timezone},
                 status,
-                "timezone matches expected" if status == CheckStatus.PASS else "timezone mismatch",
+                "timezone matches expected"
+                if status == CheckStatus.PASS
+                else "TIMEZONE_MISMATCH: timezone mismatch",
                 started,
             )
         )
@@ -275,14 +284,46 @@ def _chrony_results(
                 {"synchronized": True},
                 {"synchronized": synchronized},
                 status,
-                "chrony synchronized" if synchronized else "chrony unsynchronized",
+                "chrony synchronized"
+                if synchronized
+                else "NTP_UNSYNCHRONIZED: chrony unsynchronized",
                 started,
             )
         )
 
     actual_source = chrony.get("source")
     expected_source = expected.get("source")
-    if not isinstance(actual_source, str) or not actual_source:
+    if chrony.get("local_reference") is True:
+        policy = expected.get("local_reference_status", "WARNING")
+        results.append(
+            _r(
+                run_id,
+                "chrony.local_reference",
+                site,
+                server_id,
+                {"local_reference_status": policy},
+                chrony,
+                CheckStatus(policy),
+                "NTP_LOCAL_REFERENCE_ACTIVE: tracking uses a local reference",
+                started,
+            )
+        )
+    elif chrony.get("source_basis") == "selected_source_only":
+        results.append(
+            _r(
+                run_id,
+                "chrony.source",
+                site,
+                server_id,
+                {"source": expected_source},
+                chrony,
+                CheckStatus.ERROR,
+                "NTP_REFERENCE_UNAVAILABLE: selected source alone "
+                "does not verify tracked reference",
+                started,
+            )
+        )
+    elif not isinstance(actual_source, str) or not actual_source:
         results.append(
             _r(
                 run_id,
@@ -297,7 +338,11 @@ def _chrony_results(
             )
         )
     else:
-        status = CheckStatus.PASS if actual_source == expected_source else CheckStatus.FAIL
+        status = (
+            CheckStatus.PASS
+            if actual_source in [expected_source, *expected.get("source_aliases", [])]
+            else CheckStatus.FAIL
+        )
         results.append(
             _r(
                 run_id,
@@ -309,13 +354,71 @@ def _chrony_results(
                 status,
                 "chrony source matches expected"
                 if status == CheckStatus.PASS
-                else "chrony source mismatch",
+                else "NTP_SOURCE_MISMATCH: chrony source mismatch",
                 started,
             )
         )
 
+    candidates = [
+        row
+        for row in chrony.get("sources", [])
+        if row.get("source") in [expected_source, *expected.get("source_aliases", [])]
+    ]
+    if candidates and all(row.get("reach") == 0 for row in candidates):
+        results.append(
+            _r(
+                run_id,
+                "chrony.reachability",
+                site,
+                server_id,
+                {"source": expected_source, "reach": ">0"},
+                candidates,
+                CheckStatus.FAIL,
+                "NTP_SOURCE_UNREACHABLE: source reach register is zero",
+                started,
+            )
+        )
+    maximum = expected.get("max_root_distance_seconds")
+    if maximum is not None:
+        delay, dispersion = chrony.get("root_delay"), chrony.get("root_dispersion")
+        actual_distance: dict[str, Any]
+        if (
+            isinstance(delay, int | float)
+            and not isinstance(delay, bool)
+            and isinstance(dispersion, int | float)
+            and not isinstance(dispersion, bool)
+            and math.isfinite(delay)
+            and math.isfinite(dispersion)
+            and dispersion >= 0
+        ):
+            distance = abs(float(delay)) / 2 + float(dispersion)
+            status = CheckStatus.FAIL if distance > maximum else CheckStatus.PASS
+            message = (
+                "NTP_EXCESSIVE_UNCERTAINTY: root distance exceeds policy"
+                if status == CheckStatus.FAIL
+                else "NTP root distance within policy"
+            )
+            actual_distance = {"root_distance_seconds": distance}
+        else:
+            status, message = CheckStatus.ERROR, "NTP uncertainty measurement is unavailable"
+            actual_distance = {"root_delay": delay, "root_dispersion": dispersion}
+        results.append(
+            _r(
+                run_id,
+                "chrony.uncertainty",
+                site,
+                server_id,
+                {"max_root_distance_seconds": maximum},
+                actual_distance,
+                status,
+                message,
+                started,
+            )
+        )
     try:
         offset = abs(float(chrony["offset"]))
+        if not math.isfinite(offset):
+            raise ValueError("nonfinite offset")
     except (KeyError, TypeError, ValueError):
         results.append(
             _r(

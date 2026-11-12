@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import PureWindowsPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.config.schema import (
     DOCTOR_MANUAL_REVIEW_TRIGGERS,
@@ -159,6 +161,10 @@ def validate_config(
     _validate_splunk(config, report)
     _validate_portainer(config, report, production_preflight=production_preflight)
     _validate_doctor(config, report)
+    if not isinstance(
+        config.get("rules", {}).get("portainer", {}).get("health_required", False), bool
+    ):
+        report.add_error("rules.portainer.health_required", "must be boolean")
     _validate_rabbitmq(config, report, production_preflight=production_preflight)
     _validate_servers(config, report, production_preflight=production_preflight)
     _validate_thresholds(config, report)
@@ -642,6 +648,59 @@ def _validate_doctor(config: dict[str, Any], report: ValidationReport) -> None:
                         f"doctor.doctor.api.sites.{site_id}", "must be a non-empty API URL"
                     )
 
+    inventory = doctor.get("expected_services", [])
+    inventories = inventory.values() if isinstance(inventory, dict) else [inventory]
+    if isinstance(inventory, dict) and set(inventory) - _site_ids(config):
+        report.add_error("doctor.expected_services", "contains unknown site IDs")
+    for entries in inventories:
+        if (
+            not isinstance(entries, list)
+            or any(not isinstance(item, str) or not item.strip() for item in entries)
+            or len(entries) != len(set(entries))
+        ):
+            report.add_error(
+                "doctor.expected_services", "must contain unique non-empty service names"
+            )
+    if isinstance(api, dict):
+        for site, connection in (api.get("connections") or {}).items():
+            if connection.get("tls_verify", True) not in (True, "custom_ca"):
+                report.add_error(f"doctor.api.connections.{site}.tls_verify", "must verify TLS")
+            if connection.get("tls_verify") == "custom_ca" and not connection.get("ca_file"):
+                report.add_error(f"doctor.api.connections.{site}.ca_file", "CA bundle is required")
+            kind = connection.get("auth_type", "none")
+            if kind not in {"none", "basic", "bearer_token", "x_api_key"}:
+                report.add_error(
+                    f"doctor.api.connections.{site}.auth_type", "unsupported authentication"
+                )
+            required = (
+                ["token"]
+                if kind in {"bearer_token", "x_api_key"}
+                else (["username", "password"] if kind == "basic" else [])
+            )
+            for key in required:
+                if not connection.get(key) or is_unresolved_placeholder(connection[key]):
+                    report.add_error(
+                        f"doctor.api.connections.{site}.{key}", "credential is required"
+                    )
+    if isinstance(api, dict) and isinstance(api.get("sites"), dict):
+        for site, value in api["sites"].items():
+            if not isinstance(value, str) or is_unresolved_placeholder(value):
+                continue
+            try:
+                url = urlsplit(value)
+                if (
+                    url.scheme not in {"http", "https"}
+                    or not url.hostname
+                    or url.fragment
+                    or url.username
+                ):
+                    raise ValueError
+                _ = url.port
+            except ValueError:
+                report.add_error(
+                    f"doctor.doctor.api.sites.{site}",
+                    "requires backend HTTP(S) URL without fragment or credentials",
+                )
     validation = doctor.get("validation")
     if not isinstance(validation, dict):
         report.add_error(
@@ -921,9 +980,8 @@ def _validate_servers(
     if not isinstance(ssh, dict):
         report.add_error("servers.ssh", "must be an object")
     else:
-        fixture_mode = (
-            not production_preflight
-            and isinstance(servers_config.get("fixture_actual"), dict)
+        fixture_mode = not production_preflight and isinstance(
+            servers_config.get("fixture_actual"), dict
         )
         auth = ssh.get("auth")
         if auth not in SSH_SUPPORTED_AUTH_TYPES or (auth != "password" and not fixture_mode):
@@ -943,9 +1001,7 @@ def _validate_servers(
             ("known_hosts_path", "SSH_KNOWN_HOSTS_PATH"),
         ):
             value = ssh.get(field_name)
-            if credentials_required and (
-                not isinstance(value, str) or _runtime_unset(value)
-            ):
+            if credentials_required and (not isinstance(value, str) or _runtime_unset(value)):
                 report.add_error(
                     f"servers.ssh.{field_name}",
                     f"{env_name} runtime value is missing or unresolved",
@@ -1019,7 +1075,7 @@ def _validate_servers(
                 if len(filesystems) != 1:
                     report.add_error(
                         f"{path}.filesystems",
-                        "must contain exactly one mapper discovery policy",
+                        "must contain exactly one filesystem policy",
                     )
                 for fs_idx, filesystem in enumerate(filesystems):
                     fs_path = f"{path}.filesystems[{fs_idx}]"
@@ -1032,11 +1088,13 @@ def _validate_servers(
                     if "path" in filesystem:
                         report.add_error(
                             f"{fs_path}.path",
-                            "mountpoint selection is not supported; mapper discovery is dynamic",
+                            "mountpoint selection is not supported; use the root matching policy",
                         )
                     fs_expected = {
-                        "match": "mapper",
-                        "command": "df -h | grep mapper",
+                        "match": "root" if filesystem.get("match") == "root" else "mapper",
+                        "command": "df -P /"
+                        if filesystem.get("match") == "root"
+                        else "df -h | grep mapper",
                     }
                     for field_name, expected_value in fs_expected.items():
                         value = filesystem.get(field_name)
@@ -1048,13 +1106,10 @@ def _validate_servers(
                                 f"must be {expected_value!r}",
                             )
                     required_fs = filesystem.get("required")
-                    if (
-                        not is_unresolved_placeholder(required_fs)
-                        and required_fs is not True
-                    ):
+                    if not is_unresolved_placeholder(required_fs) and required_fs is not True:
                         report.add_error(
                             f"{fs_path}.required",
-                            "must be true; mapper filesystems are required",
+                            "must be true; the configured filesystem check is required",
                         )
                     _validate_percentage(
                         filesystem.get("warning_percent"),
@@ -1084,6 +1139,33 @@ def _validate_servers(
                             report.add_error(
                                 f"{check_path}.{field_name}", "must be a non-empty string"
                             )
+                    if check.get("local_reference_status", "WARNING") not in {
+                        "PASS",
+                        "WARNING",
+                        "FAIL",
+                        "ERROR",
+                    }:
+                        report.add_error(
+                            f"{check_path}.local_reference_status",
+                            "must be PASS, WARNING, FAIL or ERROR",
+                        )
+                    maximum = check.get("max_root_distance_seconds")
+                    if maximum is not None and (
+                        not isinstance(maximum, int | float)
+                        or isinstance(maximum, bool)
+                        or not math.isfinite(maximum)
+                        or maximum <= 0
+                    ):
+                        report.add_error(
+                            f"{check_path}.max_root_distance_seconds",
+                            "must be finite and positive or null",
+                        )
+                    for aliases in ("source_aliases", "timezone_aliases"):
+                        values = check.get(aliases, [])
+                        if not isinstance(values, list) or any(
+                            not isinstance(item, str) for item in values
+                        ):
+                            report.add_error(f"{check_path}.{aliases}", "must be a list of strings")
                     required_chrony = check.get("required")
                     if not is_unresolved_placeholder(required_chrony) and not isinstance(
                         required_chrony, bool
@@ -1163,6 +1245,7 @@ def _infrastructure_enabled(config: dict[str, Any]) -> bool:
     module = _module_rules(config).get("infrastructure", {})
     return bool(module.get("enabled") and module.get("required"))
 
+
 def _validate_manual_db_check(
     config: dict[str, Any],
     report: ValidationReport,
@@ -1225,19 +1308,14 @@ def _validate_manual_db_check(
         )
         return
 
-    if any(
-        char in script_path
-        for char in ('"', "\r", "\n")
-    ):
+    if any(char in script_path for char in ('"', "\r", "\n")):
         report.add_error(
             "manual_db_check.script_path",
             "contains unsupported characters",
         )
         return
 
-    windows_path = PureWindowsPath(
-        script_path.strip()
-    )
+    windows_path = PureWindowsPath(script_path.strip())
 
     if not windows_path.is_absolute():
         report.add_error(
@@ -1250,6 +1328,7 @@ def _validate_manual_db_check(
             "manual_db_check.script_path",
             "must reference a .ps1 file",
         )
+
 
 def _validate_thresholds(config: dict[str, Any], report: ValidationReport) -> None:
     threshold_pairs = {
@@ -1331,6 +1410,7 @@ def _validate_runtime_environment(
             "runtime.csrf",
             "WEEKEND_REPORT_CSRF_TTL_SECONDS must be a positive integer",
         )
+
 
 def _runtime_unset(value: str | None) -> bool:
     return (

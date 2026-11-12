@@ -95,6 +95,7 @@
                 {{ ui.status_badge(site.status) }}
               </div>
               <dl class="service-metrics">
+                <div><dt>Deployment mode</dt><dd>{{ site.mode }}</dd></div>
                 <div><dt>Desired</dt><dd>{{ site.desired }}</dd></div>
                 <div><dt>Running</dt><dd>{{ site.running }}</dd></div>
                 <div><dt>Healthy</dt><dd>{{ site.healthy }}</dd></div>

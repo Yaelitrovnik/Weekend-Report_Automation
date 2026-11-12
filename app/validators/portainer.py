@@ -144,7 +144,13 @@ def _validate_service(
             site_id,
             name,
             {"service_name": name, "discovered": True},
-            {"service_name": name, "exists": True},
+            {
+                "service_name": name,
+                "exists": True,
+                "service_mode": observed.get("service_mode"),
+                "healthy_replicas": observed.get("healthy_replicas"),
+                "eligibility": observed.get("eligibility"),
+            },
             CheckStatus.PASS,
             "service discovered",
             started,
@@ -152,7 +158,7 @@ def _validate_service(
         _desired_replica_result(run_id, site_id, name, observed, started),
         _running_replica_result(run_id, site_id, name, observed, started),
     ]
-    health_result = _healthy_replica_result(run_id, site_id, name, observed, started)
+    health_result = _healthy_replica_result(run_id, site_id, name, observed, started, config)
     if health_result is not None:
         results.append(health_result)
     results.extend(
@@ -247,10 +253,25 @@ def _healthy_replica_result(
     service_name: str,
     observed: dict[str, Any],
     started: str,
+    config: dict[str, Any],
 ) -> CheckResult | None:
     health = observed.get("health") or {}
     if not isinstance(health, dict) or health.get("available") is not True:
-        return None
+        required = config.get("rules", {}).get("portainer", {}).get("health_required", False)
+        if not required:
+            return None
+        return _result(
+            run_id,
+            "service.healthy_replicas",
+            site_id,
+            service_name,
+            {"health_required": True},
+            {"healthy_replicas": None, "health": health},
+            CheckStatus.ERROR,
+            "PORTAINER_HEALTH_UNAVAILABLE: health cannot be verified",
+            started,
+            metadata={"error_code": "PORTAINER_HEALTH_UNAVAILABLE"},
+        )
     desired = _replica_count(observed.get("desired_replicas"))
     healthy = _replica_count(observed.get("healthy_replicas"))
     if desired is None or healthy is None:
@@ -394,6 +415,7 @@ def _task_state_result(
                     "starting": observed.get("starting_tasks"),
                 },
                 "task_states": observed.get("task_states", []),
+                "historical_task_failures": observed.get("historical_task_failures", []),
             },
             CheckStatus.ERROR,
             "PORTAINER_INVALID_RESPONSE: task-state counts are malformed",
@@ -414,6 +436,7 @@ def _task_state_result(
             "service_name": service_name,
             "task_counts": counts,
             "task_states": observed.get("task_states", []),
+            "historical_task_failures": observed.get("historical_task_failures", []),
         },
         status,
         "task states are healthy"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from collections.abc import Mapping
 from datetime import timedelta
@@ -29,6 +30,7 @@ NOTE_EDITABLE_STATES = {RunState.REVIEW_READY}
 
 class Repository:
     def __init__(self, database_url: str = "sqlite:///:memory:") -> None:
+        self.finalization_lock = threading.RLock()
         self.database_url = database_url
         self.backend = "sqlite" if database_url.startswith("sqlite:///") else "postgres"
         self.conn: Any
@@ -57,6 +59,7 @@ class Repository:
         for statement in schema:
             self._execute(statement)
         self._ensure_run_column("build_id", "TEXT")
+        self._ensure_run_column("rejection_reason", "TEXT")
         self._ensure_note_column("reviewed", "BOOLEAN NOT NULL DEFAULT FALSE")
         if self.backend == "sqlite":
             self._execute(
@@ -423,6 +426,12 @@ class Repository:
         )
 
     def save_note(self, note: ReviewNote) -> int:
+        with self.finalization_lock, self.transaction():
+            if self.backend == "postgres":
+                self._execute("SELECT run_id FROM runs WHERE run_id=? FOR UPDATE", (note.run_id,))
+            return self._save_note(note)
+
+    def _save_note(self, note: ReviewNote) -> int:
         self.require_note_editable(note.run_id)
         now = iso_now()
         existing = self._execute(
@@ -468,21 +477,22 @@ class Repository:
         now = iso_now()
         state_lock = " FOR UPDATE" if self.backend == "postgres" else ""
 
-        with self.transaction():
+        with self.finalization_lock, self.transaction():
             run_row = self._execute(
-                "SELECT state FROM runs WHERE run_id=?" + state_lock,
+                "SELECT state, final_snapshot_path FROM runs WHERE run_id=?" + state_lock,
                 (review.run_id,),
             ).fetchone()
 
             if not run_row:
                 raise KeyError(review.run_id)
 
+            if run_row["final_snapshot_path"]:
+                raise InvalidRunTransition("review snapshot is frozen")
             state = RunState(run_row["state"])
 
             if state != RunState.REVIEW_READY:
                 raise InvalidRunTransition(
-                    "manual DB review may be edited only in REVIEW_READY; "
-                    f"got {state.value}"
+                    f"manual DB review may be edited only in REVIEW_READY; got {state.value}"
                 )
 
             self._execute(
@@ -526,9 +536,7 @@ class Repository:
             ).fetchone()
 
             if not saved:
-                raise RuntimeError(
-                    "manual DB review upsert did not return a persisted row"
-                )
+                raise RuntimeError("manual DB review upsert did not return a persisted row")
 
             return int(saved["id"])
 
@@ -624,17 +632,31 @@ class Repository:
         decision: str,
         pdf_path: str,
         checksum: str,
+        rejection_reason: str | None = None,
+        reviewed_at: str | None = None,
     ) -> None:
-        now = iso_now()
-        self._execute(
+        now = reviewed_at or iso_now()
+        changed = self._execute(
             """
             UPDATE runs
             SET state=?, reviewed_by=?, reviewed_at=?, review_decision=?, final_pdf_path=?,
-                final_pdf_checksum=?, updated_at=?
-            WHERE run_id=?
+                final_pdf_checksum=?, updated_at=?, rejection_reason=?
+            WHERE run_id=? AND state='REVIEW_READY'
             """,
-            (state.value, reviewer, now, decision, pdf_path, checksum, now, run_id),
+            (
+                state.value,
+                reviewer,
+                now,
+                decision,
+                pdf_path,
+                checksum,
+                now,
+                rejection_reason,
+                run_id,
+            ),
         )
+        if changed.rowcount != 1:
+            raise InvalidRunTransition("run was already finalized or requires recovery")
 
     def require_review_ready(self, run_id: str) -> RunRecord:
         run = self.get_run(run_id)
@@ -644,6 +666,8 @@ class Repository:
 
     def require_note_editable(self, run_id: str) -> RunRecord:
         run = self.get_run(run_id)
+        if run.final_snapshot_path:
+            raise InvalidRunTransition("review snapshot is frozen; retry the same final decision")
         if run.state not in NOTE_EDITABLE_STATES:
             raise InvalidRunTransition(f"notes may be edited only in REVIEW_READY; got {run.state}")
         return run
@@ -678,6 +702,7 @@ def _json_loads(value: Any) -> Any:
         return json.loads(value)
     return value
 
+
 def _manual_db_review_from_row(
     row: Mapping[str, Any],
 ) -> ManualDBReview:
@@ -688,13 +713,10 @@ def _manual_db_review_from_row(
         result=ManualDBReviewResult(row["result"]),
         comment=row["comment"],
         reviewer=row["reviewer"],
-        reviewed_at=(
-            str(row["reviewed_at"])
-            if row["reviewed_at"]
-            else None
-        ),
+        reviewed_at=(str(row["reviewed_at"]) if row["reviewed_at"] else None),
         id=int(row["id"]),
     )
+
 
 def _run_from_row(row: Mapping[str, Any]) -> RunRecord:
     status = CheckStatus(row["automation_status"]) if row["automation_status"] else None
@@ -719,6 +741,7 @@ def _run_from_row(row: Mapping[str, Any]) -> RunRecord:
         row["final_snapshot_path"],
         row["final_pdf_path"],
         row["final_pdf_checksum"],
+        row["rejection_reason"],
     )
 
 

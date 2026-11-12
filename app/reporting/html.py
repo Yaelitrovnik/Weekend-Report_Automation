@@ -13,6 +13,10 @@ def render_final_html(snapshot: dict[str, Any]) -> str:
         f"<p>Overall status: {html.escape(str(snapshot.get('overall_status')))}</p>",
         f"<p>Reviewer: {html.escape(snapshot['review']['reviewer'])}</p>",
         f"<p>Decision: {html.escape(snapshot['review']['decision'])}</p>",
+        "<p>Rejection reason: "
+        f"{html.escape(str(snapshot['review'].get('rejection_reason') or 'Not applicable'))}</p>",
+        "<p>Review timestamp: "
+        f"{html.escape(str(snapshot['review'].get('confirmed_at') or ''))}</p>",
         "<h2>Site Summaries</h2>",
     ]
     for summary in snapshot.get("site_summaries", []):

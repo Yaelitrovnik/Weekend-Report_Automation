@@ -120,6 +120,26 @@ class DoctorValidator(Validator):
                 )
                 continue
 
+            inventory = doctor_config.get("expected_services", [])
+            expected = inventory.get(site, []) if isinstance(inventory, dict) else inventory
+            for missing in sorted(set(expected) - set(services)):
+                results.append(
+                    _result(
+                        context.run_id,
+                        "service.exists",
+                        site,
+                        missing,
+                        {"exists": True},
+                        {"exists": False},
+                        CheckStatus.ERROR,
+                        "DOCTOR_INCOMPLETE_RESPONSE: expected service missing",
+                        started,
+                        metadata={
+                            "doctor_error_type": "technical",
+                            "error_code": "DOCTOR_INCOMPLETE_RESPONSE",
+                        },
+                    )
+                )
             for service in sorted(services):
                 results.append(_presence_result(context.run_id, site, service, started))
                 results.append(

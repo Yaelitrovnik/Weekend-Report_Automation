@@ -33,3 +33,9 @@ dist/
 *.key
 *.pem
 *.crt
+
+# Local development and release QA artifacts
+.venv/
+tmp/
+output/
+*.log

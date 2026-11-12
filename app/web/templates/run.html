@@ -80,6 +80,12 @@
   </article>
 </section>
 
+<section class="panel execution-progress">
+  <div class="panel-heading"><h2>Execution progress</h2><span class="quiet-badge">{{ site_summaries|length }} site(s)</span></div>
+  <div class="progress-grid">{% for item in execution_progress %}<div><strong>{{ module_label(item.module) }}</strong><span>{{ item.state }}</span></div>{% endfor %}</div>
+  <p>Cross-site parity: <strong>{{ parity_applicability }}</strong>{% if parity_applicability == "NOT_APPLICABLE" %} - one configured site; no comparison performed.{% endif %}</p>
+  <p class="panel-copy">Database and Splunk are manual review steps. Recording is not implemented in this source release.</p>
+</section>
 <section class="panel">
   <div class="panel-heading">
     <div>

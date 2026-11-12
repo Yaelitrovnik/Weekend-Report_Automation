@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import re
 from typing import Any
 
@@ -100,14 +101,17 @@ class InfrastructureCollector(Collector):
             payload["reachable"] = True
             # Keep raw output as evidence, including partial output on failure.
             payload["df"] = df.stdout
-            # The pipeline returns grep's status. Diagnostics can expose a df
-            # failure even when grep returns 0 or 1; never trust partial data.
+            # `grep mapper` exits 1 when no matching filesystem exists.
+            # Treat empty output as a filesystem finding rather than an SSH failure;
+            # preserve real command errors and stderr as collection errors.
             if df.stderr.strip():
                 payload["df_error"] = df.stderr
+            elif filesystem.get("match") == "root" and df.exit_code != 0:
+                payload["df_error"] = f"root filesystem command exited {df.exit_code}"
             elif df.exit_code == 1 and df.stdout.strip():
                 payload["df_error"] = "grep reported no matches but returned output"
             elif df.exit_code not in (0, 1):
-                payload["df_error"] = f"mapper filesystem command exited {df.exit_code}"
+                payload["df_error"] = f"filesystem command exited {df.exit_code}"
         except Exception:
             payload["reachable"] = False
             payload["df_error"] = "SSH collection failed"
@@ -149,7 +153,10 @@ class InfrastructureCollector(Collector):
             payload["commands"]["chronyc_sources"] = {"exit_code": sources.exit_code}
             if timezone.exit_code == tracking.exit_code == sources.exit_code == 0:
                 payload["chrony"] = {
-                    **normalize_chrony(tracking.stdout, sources.stdout),
+                    **normalize_chrony(
+                        tracking.stdout,
+                        sources.stdout,
+                    ),
                     "timezone": timezone.stdout.strip(),
                 }
             else:
@@ -168,29 +175,64 @@ def parse_chronyc_tracking(text: str) -> dict[str, Any]:
     if system_time.group("direction").lower() == "fast":
         offset = -offset
     leap = leap_status.group("status").strip()
-    return {
+    fields = dict(re.findall(r"^\s*([^:\r\n]+)\s*:\s*([^\r\n]*)", text, re.M))
+    fields = {key.strip(): value.strip() for key, value in fields.items()}
+    reference = fields.get("Reference ID", "")
+    ref_id = reference.split()[0] if reference else None
+    tracked = re.search(r"\(([^)]+)\)", reference)
+    tracked_source = tracked[1] if tracked else None
+    if not tracked_source and ref_id and len(ref_id) == 8 and ref_id != "7F7F0101":
+        try:
+            tracked_source = str(ipaddress.IPv4Address(int(ref_id, 16)))
+        except ValueError:
+            pass
+    result = {
         "offset": offset,
         "leap_status": leap,
         "synchronized": leap.lower() == "normal",
+        "reference_id": ref_id,
+        "tracked_source": tracked_source,
+        "local_reference": ref_id in {"7F7F0101", "LOCL"},
     }
+    for key, output in (("Root delay", "root_delay"), ("Root dispersion", "root_dispersion")):
+        try:
+            result[output] = float(fields[key].split()[0])
+        except (KeyError, ValueError, IndexError):
+            pass
+    return result
 
 
 def parse_chronyc_sources(text: str) -> dict[str, Any]:
     selected = SOURCE_RE.search(text)
-    if selected is None:
-        raise ValueError("chronyc sources output did not contain a selected source")
-    return {"source": selected.group("source"), "selected": True}
+    rows = []
+    for match in re.finditer(
+        r"^\s*([\^=#])([*+\-?x~])\s+(\S+)\s+\d+\s+[-\d]+\s+([0-7]+)\s+", text, re.M
+    ):
+        rows.append({"source": match[3], "state": match[2], "reach": int(match[4], 8)})
+    return {
+        "source": selected.group("source") if selected else None,
+        "selected": selected is not None,
+        "sources": rows,
+    }
 
 
-def normalize_chrony(tracking_text: str, sources_text: str) -> dict[str, Any]:
+def normalize_chrony(
+    tracking_text: str, sources_text: str, ntpdata_text: str = ""
+) -> dict[str, Any]:
     tracking = parse_chronyc_tracking(tracking_text)
     sources = parse_chronyc_sources(sources_text)
     return {
-        "synchronized": bool(tracking["synchronized"] and sources["selected"]),
-        "source": sources["source"],
-        "offset": tracking["offset"],
+        **tracking,
+        "source": tracking.get("tracked_source")
+        or (None if tracking.get("local_reference") else sources["source"]),
+        "source_basis": "tracking" if tracking.get("reference_id") else "selected_source_only",
+        "selected_source": sources["source"],
+        "sources": sources["sources"],
         "raw": {
             "tracking": tracking,
             "sources": sources,
+            "tracking_text": tracking_text,
+            "sources_text": sources_text,
+            "ntpdata_text": ntpdata_text,
         },
     }

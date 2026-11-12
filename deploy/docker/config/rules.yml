@@ -50,6 +50,8 @@ parity:
     allowed_differences: []
 
 portainer:
+  # Missing health stays unavailable; true makes unverified health a blocking ERROR.
+  health_required: false
   environment_type: docker_swarm
   connection:
     timeouts:
@@ -70,6 +72,9 @@ portainer:
     starting: WARNING
 
 doctor:
+  # Supply verified service names (list for all sites, or mapping keyed by runtime site ID).
+  # [] retains discovery-only behavior; it cannot prove the expected inventory is complete.
+  expected_services: []
   validation:
     healthy_status: PASS
     unhealthy_status: ERROR
@@ -113,12 +118,20 @@ infrastructure:
     connect_timeout: 5
     command_timeout: 5
   filesystem:
+    # Check all filesystems listed by `df -h` whose device name contains `mapper`.
     match: mapper
     command: df -h | grep mapper
     warning_percent: 70
     critical_percent: 80
     required: true
   chrony:
+    # Local fallback is visible even when allowed; use FAIL/ERROR if prohibited.
+    local_reference_status: WARNING
+    # Optional bound: abs(tracking root delay)/2 + tracking root dispersion.
+    # Set an operationally approved positive value to require this measurement.
+    max_root_distance_seconds: null
+    source_aliases: []
+    timezone_aliases: []
     warning_offset: 0.5
     critical_offset: 1.0
     required: true
@@ -142,6 +155,8 @@ review:
   result_note_required_statuses:
     - MANUAL_REVIEW
   manual_review_acknowledgment_required: true
+  # REJECT requires a reason and configured manual DB review, regardless of DB result.
+  # Technical ERROR blocks APPROVE below, but does not block REJECT.
   reject_allowed: true
   approval_status_policy:
     WARNING: REQUIRE_NOTE

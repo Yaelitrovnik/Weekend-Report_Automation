@@ -366,7 +366,8 @@ class DynamicSitesTests(unittest.TestCase):
                 outputs = {
                     "df -h | grep mapper": "/dev/mapper/vg-data 1G 0 1G 20% /data",
                     "timedatectl show -p Timezone --value": "UTC",
-                    "chronyc tracking": "System time : 0.001 seconds slow of NTP time\n"
+                    "chronyc tracking": "Reference ID : CB007101 (fixture-ntp)\n"
+                "System time : 0.001 seconds slow of NTP time\n"
                     "Leap status : Normal",
                     "chronyc sources -n": "^* fixture-ntp 1 6 377 12 +10us",
                 }

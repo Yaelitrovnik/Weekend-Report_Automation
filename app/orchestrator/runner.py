@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import traceback
 from typing import Any
 
 from app.collectors.doctor import DoctorCollector
@@ -8,6 +7,8 @@ from app.collectors.infrastructure import InfrastructureCollector
 from app.collectors.portainer import PortainerCollector
 from app.collectors.rabbitmq import RabbitMQCollector
 from app.domain import CheckResult, CheckStatus, EvidenceRecord, to_jsonable
+from app.evidence.redaction import configured_secrets, sanitize
+from app.observability import event
 from app.orchestrator.aggregation import aggregate_status
 from app.orchestrator.execution_plan import build_execution_plan, parity_applicable
 from app.orchestrator.run_context import RunContext
@@ -36,14 +37,16 @@ VALIDATORS: dict[str, Any] = {
 class OrchestratorRunner:
     def run(self, context: RunContext) -> list[CheckResult]:
         all_results: list[CheckResult] = []
+        secrets = configured_secrets(context.config)
         for step in build_execution_plan(context.config):
             context.repository.heartbeat(context.run_id, current_module=step.module)
             started = iso_now()
+            event("module_started", run_id=context.run_id, module=step.module)
             raw_evidence: EvidenceRecord | None = None
             try:
                 collector = COLLECTORS[step.module]()
                 validator = VALIDATORS[step.module]()
-                actual = collector.collect(context)
+                actual = sanitize(collector.collect(context), secrets)
                 raw_evidence = context.evidence.write_json(
                     context.run_id,
                     step.module,
@@ -59,8 +62,8 @@ class OrchestratorRunner:
                 error_payload = {
                     "module": step.module,
                     "exception": type(exc).__name__,
-                    "message": str(exc),
-                    "traceback": traceback.format_exc(limit=8),
+                    "message": "Collector or validator raised an unexpected exception",
+                    "error_type": type(exc).__name__,
                     "configured_if_unavailable_status": unavailable_status.value,
                     "required": step.required,
                 }
@@ -83,11 +86,11 @@ class OrchestratorRunner:
                         expected={"module": step.module},
                         actual={"exception": type(exc).__name__},
                         status=unavailable_status,
-                        message=f"{step.module} failed unexpectedly: {exc}",
+                        message=f"{step.module} failed unexpectedly ({type(exc).__name__})",
                         started_at=started,
                         finished_at=iso_now(),
                         metadata={
-                            "traceback": traceback.format_exc(limit=8),
+                            "error_type": type(exc).__name__,
                             "required": step.required,
                             "configured_if_unavailable_status": unavailable_status.value,
                         },
@@ -96,6 +99,23 @@ class OrchestratorRunner:
             for result in results:
                 self._store_result_with_evidence(context, result, raw_evidence)
             all_results.extend(results)
+            for result in results:
+                if result.status == CheckStatus.ERROR:
+                    event(
+                        "module_error",
+                        run_id=context.run_id,
+                        module=step.module,
+                        site=result.site,
+                        severity="ERROR",
+                        error_code=result.metadata.get("error_code"),
+                        check_id=result.check_id,
+                    )
+            event(
+                "module_completed",
+                run_id=context.run_id,
+                module=step.module,
+                result_count=len(results),
+            )
         if parity_applicable(context.config):
             parity_basis = context.evidence.write_json(
                 context.run_id,
@@ -114,6 +134,8 @@ class OrchestratorRunner:
             all_results.extend(parity)
         status = aggregate_status(all_results, context.config)
         context.repository.mark_review_ready(context.run_id, status)
+        event("run_completed", run_id=context.run_id, status=status.value)
+        event("run_ready_for_review", run_id=context.run_id)
         return all_results
 
     def _store_result_with_evidence(

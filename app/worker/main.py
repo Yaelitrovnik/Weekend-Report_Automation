@@ -8,6 +8,7 @@ from app.config.loader import load_config_dir
 from app.config.validation import validate_config
 from app.database.repository import Repository
 from app.evidence.manager import EvidenceManager
+from app.observability import event
 from app.orchestrator.run_context import RunContext
 from app.orchestrator.runner import OrchestratorRunner
 
@@ -23,14 +24,19 @@ def main() -> None:
         recover_stale_runs(repo, config, worker_id)
         run = repo.claim_next_run(worker_id)
         if run:
+            event("worker_claimed_run", run_id=run.run_id)
             preflight = validate_config(config)
             if not preflight.ok:
                 repo.mark_failed(run.run_id, "; ".join(preflight.lines()))
                 continue
+            event("configuration_validated", run_id=run.run_id)
             try:
                 OrchestratorRunner().run(RunContext(run.run_id, config, repo, evidence))
             except Exception as exc:
-                repo.mark_failed(run.run_id, str(exc))
+                event(
+                    "run_failed", run_id=run.run_id, severity="ERROR", error_type=type(exc).__name__
+                )
+                repo.mark_failed(run.run_id, "Unexpected worker failure; inspect retained evidence")
         time.sleep(float(os.getenv("WEEKEND_REPORT_WORKER_POLL_SECONDS", "2")))
 
 

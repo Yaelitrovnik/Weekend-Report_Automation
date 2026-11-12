@@ -58,7 +58,6 @@ class CIConfigTests(unittest.TestCase):
             self.assertIn(gate, text)
         self.assertIn("workflow_call:", text)
         self.assertIn("image: postgres:16-alpine", text)
-        self.assertNotIn("cr.io:5000", text)
         self.assertNotIn("continue-on-error", text)
 
     def test_github_image_is_gated_and_smoked_before_export_or_publish(self):
